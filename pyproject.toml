@@ -5,6 +5,7 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.141.1",
     "joblib>=1.5.3",
+    "matplotlib>=3.11.1",
     "numpy>=2.4.6",
     "onnx>=1.22.0",
     "onnxruntime>=1.28.0",
@@ -12,6 +13,7 @@ dependencies = [
     "prometheus-client>=0.26.0",
     "pydantic>=2.13.4",
     "scikit-learn>=1.9.0",
+    "seaborn>=0.13.2",
     "skl2onnx>=1.20.0",
     "uvicorn[standard]>=0.52.0",
 ]
