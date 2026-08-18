@@ -1,0 +1,39 @@
+{
+  "model": "TF-IDF + MLPClassifier",
+  "training_time_seconds": 3.3300933999707922,
+  "training_iterations": 23,
+  "tfidf_features": 5000,
+  "model_size_mb": 7.529224395751953,
+  "validation": {
+    "accuracy": 0.6111111111111112,
+    "balanced_accuracy": 0.4835748792270531,
+    "precision_macro": 0.4086687306501548,
+    "recall_macro": 0.4835748792270531,
+    "f1_macro": 0.44249039822114417
+  },
+  "test": {
+    "accuracy": 0.5648148148148148,
+    "balanced_accuracy": 0.4420289855072464,
+    "precision_macro": 0.3761006289308176,
+    "recall_macro": 0.4420289855072464,
+    "f1_macro": 0.4063739707304064
+  },
+  "latency": {
+    "latency_mean_ms": 4.3172944462168275,
+    "latency_median_ms": 4.06549999024719,
+    "latency_p95_ms": 6.827939976938069,
+    "latency_max_ms": 15.946700004860759
+  },
+  "configuration": {
+    "hidden_layer_sizes": [
+      64
+    ],
+    "max_features": 5000,
+    "ngram_range": [
+      1,
+      2
+    ],
+    "confidence_target_origin": "BioBERT pseudo-labeling + uncertainty zone",
+    "random_state": 42
+  }
+}
