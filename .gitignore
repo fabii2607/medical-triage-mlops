@@ -14,3 +14,5 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+# Artefatos de modelo (gerados pelo pipeline de treino)
+models/
