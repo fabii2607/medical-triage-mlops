@@ -1,3 +1,10 @@
+# Artefatos gerados pelo pipeline — regeneráveis via src/ (ver README)
+data/processed/
+models/*.joblib
+
+# Material do curso
+*.pdf
+
 # Ambiente virtual
 .venv/
 venv/
