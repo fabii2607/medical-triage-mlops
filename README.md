@@ -3,42 +3,39 @@
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-1.9-F7931E?logo=scikitlearn&logoColor=white)
 ![Transformers](https://img.shields.io/badge/BioBERT-pseudo--labeling-FFD21E?logo=huggingface&logoColor=black)
-![FastAPI](https://img.shields.io/badge/FastAPI-roadmap-009688?logo=fastapi&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-container-2496ED?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-Sistema **MLOps de triagem automática de laudos médicos**: dado o texto de um
-laudo/abstract, o modelo classifica em **3 níveis de urgência** — `urgente`,
-`atenção`, `normal` — para priorizar a fila de atendimento.
+Sistema **MLOps de triagem automática de laudos médicos**: dado o texto de um laudo/abstract, o modelo classifica em **3 níveis de urgência** — `urgente`, `atenção`, `normal` — para priorizar a fila de atendimento.
 
-O dataset original ([Medical Abstracts TC Corpus](https://github.com/sebischair/Medical-Abstracts-TC-Corpus))
-tem categorias de doenças, não urgência. A solução: um **BioBERT pré-treinado**
-(`Yuvrajxms09/biobert-triage-classifier`, binário urgent/non-urgent) gera
-**pseudo-rótulos** para 11.227 abstracts únicos, uma regra de threshold cria a
-zona de incerteza `atenção`, e um **modelo leve TF-IDF + Logistic Regression**
-é destilado desses rótulos — é ele que vai para produção (0,3 MB, ~0,5 ms de
-latência, sem torch/GPU no serving).
+O dataset original ([Medical Abstracts TC Corpus](https://github.com/sebischair/Medical-Abstracts-TC-Corpus)) possui categorias de doenças, e não níveis de urgência. A solução utiliza um **BioBERT pré-treinado** (`Yuvrajxms09/biobert-triage-classifier`, binário urgent/non-urgent) para gerar pseudo-rótulos para os abstracts.
 
-> Projeto do **Tech Challenge Fase 3 — POSTECH (MLET)**. Contexto-mestre e
-> registro de decisões em [PLANNING.md](PLANNING.md).
+Uma regra baseada em threshold cria a zona de incerteza `atenção`, e posteriormente um **modelo leve TF-IDF + Logistic Regression** é treinado sobre esses pseudo-rótulos.
+
+O modelo escolhido para produção é o `logreg_tfidf_v2`, com aproximadamente **0,3 MB**, baixa latência de inferência e sem necessidade de `torch`, `transformers` ou GPU no serving.
+
+> Projeto do **Tech Challenge Fase 3 — POSTECH (MLET)**. Contexto-mestre e registro de decisões em [PLANNING.md](PLANNING.md).
 
 ---
 
 ## Resultados
 
-Avaliação no split de teste (1.685 amostras, 203 `urgente`). O baseline v1 foi
-treinado sobre uma amostra parcial e enviesada (720 abstracts); os modelos v2
-usam o corpus completo pseudo-rotulado.
+Avaliação no split de teste (1.685 amostras, 203 `urgente`). O baseline v1 foi treinado sobre uma amostra parcial e enviesada (720 abstracts); os modelos v2 utilizam o corpus completo pseudo-rotulado.
 
 | Modelo | Accuracy | Balanced Acc | Macro F1 | Recall `urgente` | Tamanho | Latência média |
-|---|---|---|---|---|---|---|
+|---|---:|---:|---:|---:|---:|---:|
 | MLP v1 (720 amostras) | 0,565 | 0,442 | 0,406 | 0,000 | 7,5 MB | 4,3 ms |
 | MLP v2 (corpus completo) | **0,776** | 0,731 | **0,748** | 0,591 | 7,5 MB | 0,59 ms |
 | **LogReg balanced v2** ✅ | 0,767 | **0,777** | **0,748** | **0,808** | **0,3 MB** | **0,46 ms** |
 
-**Modelo escolhido para a API: `logreg_tfidf_v2`** — macro F1 empatado com o
-MLP, mas encontra 81% dos casos urgentes (a classe crítica de uma triagem),
-com `class_weight='balanced'`. Métricas completas (por classe, matriz de
-confusão, validação e teste): [docs/results/triage_metrics_v2.json](docs/results/triage_metrics_v2.json).
+**Modelo escolhido para produção: `logreg_tfidf_v2`**
+
+A escolha considera principalmente o desempenho na classe `urgente`, que representa a classe crítica do sistema de triagem. O modelo apresenta **recall de aproximadamente 81% para casos urgentes**, mantendo Macro F1 de 0,748 e utilizando `class_weight='balanced'`.
+
+As métricas completas, incluindo métricas por classe, matriz de confusão, validação e teste estão disponíveis em:
+
+[docs/results/triage_metrics_v2.json](docs/results/triage_metrics_v2.json)
 
 ---
 
@@ -46,188 +43,731 @@ confusão, validação e teste): [docs/results/triage_metrics_v2.json](docs/resu
 
 ```mermaid
 flowchart LR
-    subgraph OFFLINE["Offline — batch (GPU opcional)"]
+
+    subgraph OFFLINE["Offline — Batch"]
         A[("Medical Abstracts<br/>11.227 únicos")] --> B["BioBERT pré-treinado<br/>urgent / non-urgent"]
         B --> C["Regra threshold 0,70<br/>normal · atenção · urgente"]
         C --> D["Split estratificado<br/>70 / 15 / 15"]
         D --> E["TF-IDF + LogReg<br/>(class_weight=balanced)"]
     end
-    subgraph ONLINE["Online — real-time (CPU)"]
-        F["FastAPI /predict<br/>(Etapa 1)"] --> G["Prometheus + Grafana<br/>(Etapa 3)"]
+
+    subgraph ONLINE["Online — Real-time"]
+        F["FastAPI<br/>/predict"] --> G["Container Docker"]
     end
-    E -->|"joblib → ONNX (Etapa 4)"| F
+
+    E -->|"joblib"| F
+
+    G -.-> H["Prometheus + Grafana<br/>(Etapa 3)"]
 
     style B fill:#dbeafe,stroke:#2563eb
     style E fill:#dcfce7,stroke:#16a34a
     style F fill:#fef9c3,stroke:#ca8a04
 ```
 
-A classe `atenção` **não** é aprendida pelo BioBERT — é uma regra operacional
-sobre a zona de incerteza do classificador binário
-(`0,30 ≤ urgent_score < 0,70`), decisão documentada nos notebooks 02–03 e no
-[PLANNING.md](PLANNING.md).
+O fluxo possui duas partes principais:
+
+- **Offline / Batch:** geração dos pseudo-rótulos, divisão dos dados e treinamento dos modelos.
+- **Online / Real-time:** API FastAPI responsável por receber o laudo e realizar a classificação.
+
+O modelo de produção é carregado uma única vez durante o startup da API e permanece em memória para atender às requisições.
+
+A classe `atenção` **não é aprendida diretamente pelo BioBERT**. Ela representa uma regra operacional baseada na zona de incerteza do classificador binário:
+
+`0,30 ≤ urgent_score < 0,70`
+
+Essa decisão está documentada nos notebooks e no [PLANNING.md](PLANNING.md).
+
+---
+
+## Decisão arquitetural — Real-time vs Batch
+
+O sistema foi projetado considerando dois tipos diferentes de processamento.
+
+### Inferência — Real-time
+
+A triagem de um laudo deve acontecer no momento em que o texto chega ao sistema. Por isso, a inferência é realizada através de uma **API REST em FastAPI**, empacotada em um container Docker.
+
+A arquitetura proposta para produção em AWS é:
+
+```text
+Cliente
+   |
+   v
+API FastAPI
+   |
+   v
+Container Docker
+   |
+   v
+Modelo TF-IDF + Logistic Regression
+```
+
+Para uma implantação em nuvem, a arquitetura considerada é:
+
+```text
+Cliente
+   |
+   v
+AWS
+   |
+   +--> ECR
+   |     Container da API
+   |
+   +--> ECS Fargate
+   |     Serviço FastAPI
+   |
+   +--> CloudWatch
+         Logs e métricas
+```
+
+O **Amazon ECR** seria utilizado para armazenar a imagem Docker, enquanto o **Amazon ECS com Fargate** seria utilizado para executar o serviço sem necessidade de gerenciamento direto de servidores.
+
+### Treinamento — Batch
+
+O treinamento e o retreinamento não fazem parte do caminho de inferência.
+
+Essas tarefas são executadas de forma **batch**, podendo posteriormente ser orquestradas pelo Airflow na Etapa 2.
+
+```text
+Dados
+  |
+  v
+Pseudo-labeling
+  |
+  v
+Split
+  |
+  v
+Treinamento
+  |
+  v
+Avaliação
+  |
+  v
+Novo artefato do modelo
+```
+
+Essa separação evita que processos pesados de treinamento afetem a disponibilidade e a latência da API de inferência.
 
 ---
 
 ## Pré-requisitos
 
-- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** — único
-  pré-requisito; resolve as versões exatas do `uv.lock`.
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** — gerenciamento do ambiente Python e das dependências através do `uv.lock`.
+- **Docker Desktop** — necessário para executar a API em container.
+
+### Instalação do uv
 
 ```bash
 # macOS/Linux
 curl -sSf https://astral.sh/uv/install.sh | sh
+
 # Windows
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-- **GPU (opcional)** — acelera apenas a pseudo-rotulagem (BioBERT): ~2 min em
-  GPU vs ~8 h em CPU. O lock trava a build CPU do torch (portável); para usar
-  CUDA localmente:
+### GPU — opcional
+
+A GPU é utilizada apenas na etapa de pseudo-rotulagem com BioBERT.
+
+O serving da API **não utiliza GPU**.
+
+Para utilizar CUDA localmente durante o processamento offline:
 
 ```bash
 uv pip install --reinstall torch --index-url https://download.pytorch.org/whl/cu128
-# A partir daí use sempre `uv run --no-sync` — um `uv sync` reverte para CPU.
 ```
+
+A partir daí, utilize:
+
+```bash
+uv run --no-sync
+```
+
+para evitar que um `uv sync` reverta a instalação para a versão CPU.
 
 ---
 
 ## Dados e artefatos
 
-- `data/raw/` está **no git** (dataset original, ~17 MB).
-- `data/processed/` e `models/*.joblib` estão **fora do git** (`.gitignore`) —
-  são regenerados pelo pipeline abaixo, de forma determinística (seed 42).
-- `docs/results/*.json` (métricas) ficam no git como referência.
+- `data/raw/` está no Git e contém o dataset original.
+- `data/processed/` está fora do Git e contém dados intermediários regeneráveis.
+- `models/*.joblib` está fora do Git e contém artefatos regeneráveis.
+- `docs/results/*.json` permanece no Git como referência das métricas.
 
-> **Para quem vai desenvolver a API:** o artefato `models/logreg_tfidf_v2.joblib`
-> é gerado pelos 3 comandos do quickstart. Sem GPU, peça o arquivo ao time
-> (0,3 MB) ou rode a pseudo-rotulagem com `--limit` para um ciclo reduzido.
-> O serving **não precisa de torch nem GPU** — só `scikit-learn` + `joblib`.
+O modelo utilizado pela API é:
+
+```text
+models/logreg_tfidf_v2.joblib
+```
+
+O artefato possui aproximadamente **0,3 MB**.
+
+Para o serving, são necessárias apenas as dependências relacionadas à API e ao modelo:
+
+- FastAPI
+- Uvicorn
+- Pydantic
+- scikit-learn
+- joblib
+- numpy
+
+`torch` e `transformers` são utilizados no pipeline offline e não são necessários para a execução da API.
 
 ---
+
+# Etapa 1 — API e Deploy
+
+A Etapa 1 tem como objetivo criar a API de inferência, containerizar o serviço e estabelecer um baseline de latência.
 
 ## Quickstart
 
+### 1. Clonar o repositório
+
 ```bash
-# 1. Clonar e instalar
 git clone https://github.com/fabii2607/medical-triage-mlops.git
+
 cd medical-triage-mlops
-uv sync
-
-# 2. Pipeline completo (determinístico, seed 42)
-uv run python -m src.labeling.pseudolabel      # BioBERT → pseudo-rótulos (GPU ~2 min)
-uv run python -m src.data.split                # splits 70/15/15 estratificados
-uv run python -m src.training.train_mlp --version v2   # MLP + LogReg (~15 s, CPU)
-
-# 3. Qualidade
-uv run pytest              # 12 testes
-uv run ruff check src tests
-
-# Opções úteis da pseudo-rotulagem:
-#   --limit 200   smoke test (não sobrescreve o dataset completo)
-#   --resume      retoma do checkpoint (grava a cada 500 textos)
 ```
 
-> Com a GPU habilitada (ver Pré-requisitos), troque `uv run` por
-> `uv run --no-sync` em todos os comandos.
+### 2. Instalar as dependências
+
+```bash
+uv sync
+```
+
+### 3. Verificar os testes
+
+```bash
+uv run pytest
+```
+
+Atualmente, o projeto possui **17 testes**, cobrindo a API, métricas, split dos dados e regras de triagem.
+
+Exemplo de resultado:
+
+```text
+17 passed
+```
+
+### 4. Executar a API localmente
+
+```bash
+uv run uvicorn api.main:app --reload
+```
+
+A API estará disponível em:
+
+```text
+http://127.0.0.1:8000
+```
+
+A documentação interativa do Swagger pode ser acessada em:
+
+```text
+http://127.0.0.1:8000/docs
+```
 
 ---
 
-## Usando o modelo (contrato para a API)
+## API
+
+A API possui dois endpoints principais.
+
+### `GET /health`
+
+Endpoint utilizado para verificar a disponibilidade do modelo.
+
+Exemplo:
+
+```http
+GET /health
+```
+
+Resposta:
+
+```json
+{
+  "status": "ok",
+  "model_loaded": true
+}
+```
+
+Caso o modelo não tenha sido carregado corretamente, a API retorna:
+
+```text
+503 Service Unavailable
+```
+
+Esse endpoint também pode ser utilizado posteriormente como health check/probe do container.
+
+---
+
+### `POST /predict`
+
+Recebe o texto de um laudo ou abstract médico em inglês e retorna a classificação de triagem.
+
+Request:
+
+```json
+{
+  "text": "Patient presenting acute myocardial infarction with severe chest pain."
+}
+```
+
+Resposta:
+
+```json
+{
+  "triage_level": "urgente",
+  "probabilities": {
+    "atenção": 0.070,
+    "normal": 0.006,
+    "urgente": 0.924
+  },
+  "model_version": "logreg_tfidf_v2"
+}
+```
+
+A API utiliza `model.classes_` para determinar a correspondência entre as probabilidades e as classes, evitando depender de uma ordem de classes definida manualmente.
+
+O campo `model_version` permite rastrear qual versão do modelo realizou a predição.
+
+### Validação
+
+Textos vazios ou contendo apenas espaços são rejeitados:
+
+```json
+{
+  "text": ""
+}
+```
+
+Resultado:
+
+```text
+422 Unprocessable Entity
+```
+
+O mesmo ocorre quando o campo `text` não é informado.
+
+---
+
+## Contrato do modelo
+
+O modelo é um Pipeline completo do scikit-learn:
 
 ```python
 import joblib
 
-model = joblib.load("models/logreg_tfidf_v2.joblib")   # Pipeline sklearn completo
+model = joblib.load(
+    "models/logreg_tfidf_v2.joblib"
+)
 
-texto = ["Patient presenting acute myocardial infarction with severe chest pain."]
-model.predict(texto)          # ['urgente']
-model.predict_proba(texto)    # [[0.070, 0.006, 0.924]]
-model.classes_                # ['atenção', 'normal', 'urgente']
+texto = [
+    "Patient presenting acute myocardial infarction with severe chest pain."
+]
+
+model.predict(texto)
+
+model.predict_proba(texto)
+
+model.classes_
 ```
 
-Entrada: texto livre em inglês (abstract/laudo). Saída: uma das 3 classes +
-probabilidades. O pipeline embute o TF-IDF — não há pré-processamento externo.
+O resultado esperado para o exemplo é:
+
+```python
+model.predict(texto)
+# ['urgente']
+
+model.predict_proba(texto)
+# [[0.070, 0.006, 0.924]]
+
+model.classes_
+# ['atenção', 'normal', 'urgente']
+```
+
+O TF-IDF está incorporado ao Pipeline. Portanto, a API recebe diretamente o texto e não realiza pré-processamento externo.
 
 ---
 
-## Estrutura do projeto
+## Benchmark de latência
 
+A Etapa 1 também exige a medição do tempo de resposta da API.
+
+O benchmark está disponível em:
+
+```text
+src/benchmark.py
 ```
+
+Ele realiza:
+
+- 10 requisições de warm-up;
+- 100 requisições de benchmark;
+- cálculo da latência média;
+- cálculo do P95;
+- registro da latência mínima;
+- registro da latência máxima.
+
+Para executar:
+
+```bash
+uv run python src/benchmark.py
+```
+
+Resultado obtido no ambiente local:
+
+```text
+Benchmark results
+-----------------
+Requests: 100
+Mean: 4.05 ms
+P95: 6.37 ms
+Min: 2.99 ms
+Max: 9.47 ms
+```
+
+O valor de aproximadamente **0,46 ms** apresentado nas métricas do modelo corresponde à inferência local sem a sobrecarga HTTP.
+
+O benchmark da API mede o tempo de resposta completo, incluindo a comunicação HTTP, validação e processamento da requisição.
+
+Por isso, os valores não devem ser comparados diretamente como se fossem a mesma medição.
+
+---
+
+# Docker
+
+A API possui um `Dockerfile` específico para o serving.
+
+A imagem utiliza:
+
+```text
+python:3.11-slim
+```
+
+e instala apenas as dependências necessárias para execução da API, evitando incluir no container de serving os componentes pesados utilizados no treinamento, como:
+
+- PyTorch;
+- Transformers;
+- Jupyter;
+- ferramentas de desenvolvimento;
+- dependências utilizadas exclusivamente no pipeline offline.
+
+O modelo `logreg_tfidf_v2.joblib` é incluído na imagem para que o container seja autocontido.
+
+### Build da imagem
+
+Com o Docker Desktop em execução:
+
+```bash
+docker build -t medical-triage-api .
+```
+
+### Executar o container
+
+```bash
+docker run --rm -p 8000:8000 medical-triage-api
+```
+
+A API estará disponível em:
+
+```text
+http://127.0.0.1:8000
+```
+
+Swagger:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Health check:
+
+```text
+http://127.0.0.1:8000/health
+```
+
+### Testando o container
+
+Exemplo de requisição:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/predict" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"text\":\"Patient presenting acute myocardial infarction with severe chest pain.\"}"
+```
+
+Resposta esperada:
+
+```json
+{
+  "triage_level": "urgente",
+  "probabilities": {
+    "atenção": 0.070,
+    "normal": 0.006,
+    "urgente": 0.924
+  },
+  "model_version": "logreg_tfidf_v2"
+}
+```
+
+---
+
+## Testes da API
+
+Os testes de API estão em:
+
+```text
+tests/test_api.py
+```
+
+A suíte cobre:
+
+- `POST /predict` com texto válido;
+- validação de texto vazio;
+- ausência do campo `text`;
+- `GET /health`;
+- validação das probabilidades;
+- existência das três classes.
+
+A suíte completa pode ser executada com:
+
+```bash
+uv run pytest
+```
+
+Resultado atual:
+
+```text
+17 passed
+```
+
+---
+
+## Estrutura da API
+
+A implementação foi separada para permitir futuras alterações no backend de inferência.
+
+```text
+api/
+├── main.py       # Aplicação FastAPI e endpoints
+├── model.py      # Carregamento e inferência do modelo
+└── schemas.py    # Schemas Pydantic
+```
+
+O modelo é carregado uma única vez durante o startup da aplicação através do `lifespan` do FastAPI.
+
+Essa separação também facilita a futura substituição do backend `scikit-learn/joblib` por **ONNX Runtime**, prevista na Etapa 4, sem necessidade de reescrever as rotas da API.
+
+---
+
+# Estrutura do projeto
+
+```text
 medical-triage-mlops/
+
+├── api/
+│   ├── main.py              # API FastAPI
+│   ├── model.py             # Carregamento e inferência
+│   └── schemas.py           # Schemas Pydantic
+│
 ├── src/
-│   ├── config.py            # Caminhos e constantes (threshold, seed, max_length)
-│   ├── labeling/            # BioBERT (inferência) + regra de triagem + CLI pseudo-rotulagem
-│   ├── data/                # CLI do split estratificado com verificação de vazamento
-│   ├── training/            # CLI de treino: MLP + LogReg, artefatos versionados
-│   └── evaluation/          # Métricas (accuracy, macro P/R/F1, confusão) + latência
-├── notebooks/               # História do projeto: 01 EDA · 02 piloto BioBERT ·
-│                            # 03 regra de triagem · 04 pseudo-rotulagem ·
-│                            # 05 split · 06 treino MLP
-├── data/raw/                # Dataset original (no git)
-├── data/processed/          # Pseudo-rótulos + splits (fora do git, regenerável)
-├── models/                  # Artefatos .joblib (fora do git, regenerável)
-├── docs/results/            # Métricas de referência por versão (no git)
-├── tests/                   # pytest: regra de triagem, split, métricas
-├── api/                     # (Etapa 1) FastAPI: /predict, /health, /metrics
+│   ├── config.py            # Caminhos e constantes
+│   ├── labeling/            # BioBERT + pseudo-labeling
+│   ├── data/                # Split estratificado
+│   ├── training/            # Treinamento dos modelos
+│   ├── evaluation/          # Avaliação dos modelos
+│   └── benchmark.py         # Benchmark da API
+│
+├── notebooks/               # História do projeto e experimentos
+│
+├── data/
+│   ├── raw/                 # Dataset original
+│   └── processed/           # Dados processados
+│
+├── models/                  # Modelos treinados
+│
+├── docs/
+│   └── results/             # Métricas de referência
+│
+├── tests/                   # Testes automatizados
+│
 ├── dags/                    # (Etapa 2) DAG Airflow
+│
 ├── monitoring/              # (Etapa 3) Prometheus + Grafana
-├── PLANNING.md              # Contexto-mestre: decisões, etapas, riscos
-├── pyproject.toml           # Deps prod/dev (uv) + config pytest
-└── uv.lock                  # Reprodutibilidade exata
+│
+├── PLANNING.md              # Contexto e decisões do projeto
+├── Dockerfile               # Container da API
+├── pyproject.toml           # Dependências e configuração
+└── uv.lock                  # Dependências fixadas
 ```
 
 ---
 
-## Tecnologias
+# Tecnologias
 
 | Categoria | Stack |
 |---|---|
-| Pseudo-rotulagem | BioBERT via 🤗 transformers + torch (GPU opcional) |
-| Modelo de produção | scikit-learn (TF-IDF + LogisticRegression), joblib |
-| API (roadmap) | FastAPI + Uvicorn + Pydantic, otimização com ONNX Runtime |
-| Orquestração (roadmap) | Airflow standalone em Docker Compose |
-| Monitoramento (roadmap) | prometheus-client + Prometheus + Grafana |
-| Qualidade | ruff · pytest · type hints |
-| Ambiente | uv + `uv.lock` (Python 3.11) |
+| Pseudo-rotulagem | BioBERT via 🤗 Transformers + PyTorch |
+| Modelo de produção | scikit-learn — TF-IDF + Logistic Regression |
+| Serialização | joblib |
+| API | FastAPI + Uvicorn + Pydantic |
+| Containerização | Docker |
+| Orquestração | Airflow |
+| Monitoramento | prometheus-client + Prometheus + Grafana |
+| Otimização | ONNX Runtime |
+| Qualidade | Ruff + pytest + type hints |
+| Ambiente | uv + `uv.lock` |
+| Deploy em nuvem | AWS — ECR + ECS Fargate + CloudWatch |
 
 ---
 
-## Documentação
+# Documentação
 
 | Documento | Descrição |
 |---|---|
 | [PLANNING.md](PLANNING.md) | Contexto-mestre: decisões técnicas, arquitetura, etapas e riscos |
-| [Resumo dos notebooks](docs/resumo_notebooks_refatoracao.md) | O que cada notebook faz + correções da auditoria |
+| [Resumo dos notebooks](docs/resumo_notebooks_refatoracao.md) | Descrição dos notebooks e correções realizadas |
 | [Métricas v2](docs/results/triage_metrics_v2.json) | Métricas completas dos modelos treinados no corpus completo |
 
 ---
 
-## Roadmap (etapas do PLANNING)
+# Roadmap
 
-**Etapa 0 — Estudo em notebooks** ✅
-- [x] EDA, piloto BioBERT, regra de triagem, pseudo-rotulagem, split, MLP baseline
+O projeto está dividido nas quatro etapas definidas pelo Tech Challenge.
 
-**Etapa 0.5 — Refatoração + rodada completa** ✅
+## Etapa 0 — Estudo em notebooks ✅
+
+- [x] EDA
+- [x] Piloto BioBERT
+- [x] Definição da regra de triagem
+- [x] Pseudo-rotulagem
+- [x] Split dos dados
+- [x] Treinamento do MLP baseline
+
+---
+
+## Etapa 0.5 — Refatoração + rodada completa ✅
+
 - [x] Lógica migrada para `src/` com CLIs reproduzíveis
-- [x] Corpus completo pseudo-rotulado (11.227, sem viés, `max_length=512`)
-- [x] LogReg balanced v2 escolhido (recall urgente 0,81)
-- [x] 12 testes unitários
+- [x] Corpus completo pseudo-rotulado
+- [x] 11.227 abstracts únicos
+- [x] Split estratificado
+- [x] LogReg balanced v2 escolhido
+- [x] Recall `urgente` de aproximadamente 0,81
+- [x] Testes automatizados
 
-**Etapa 1 — API**
-- [ ] FastAPI: `POST /predict`, `GET /health` + Dockerfile
-- [ ] Análise arquitetural AWS (real-time vs batch)
+---
 
-**Etapa 2 — CI/CD e orquestração**
-- [ ] GitHub Actions: ruff → pytest → docker build
-- [ ] DAG Airflow: pseudolabel → split → train → evaluate → export_onnx
+## Etapa 1 — Decisão Arquitetural e API Inicial ✅
 
-**Etapa 3 — Monitoramento**
-- [ ] Prometheus + Grafana (≥3 painéis) + guard-rail da classe `urgente`
+- [x] Decisão arquitetural Real-time vs Batch
+- [x] FastAPI
+- [x] `POST /predict`
+- [x] `GET /health`
+- [x] Validação dos requests com Pydantic
+- [x] Carregamento do modelo no startup
+- [x] Controle das predições por classe
+- [x] Testes automatizados da API
+- [x] Dockerfile funcional
+- [x] API executando em container Docker
+- [x] Benchmark de latência da API
+- [x] Baseline de latência local documentado
+- [x] Documentação da arquitetura AWS no README
 
-**Etapa 4 — Otimização e entrega**
-- [ ] Exportação ONNX + benchmark de latência
-- [ ] Vídeo STAR (≤5 min)
+### Resultado do benchmark
+
+```text
+Mean: 4.05 ms
+P95: 6.37 ms
+```
+
+---
+
+## Etapa 2 — CI/CD e Pipeline Automatizado
+
+- [ ] GitHub Actions
+- [ ] Automação de lint
+- [ ] Automação de testes
+- [ ] Build automático da imagem Docker
+- [ ] DAG Airflow
+- [ ] Pipeline de retreinamento
+- [ ] Ingestão → pseudo-labeling → split → treino → avaliação
+
+---
+
+## Etapa 3 — Monitoramento e Observabilidade
+
+- [ ] Instrumentação completa com `prometheus-client`
+- [ ] Métrica de contagem de requisições
+- [ ] Métrica de latência
+- [ ] Métrica de predições por classe
+- [ ] `docker-compose.yml`
+- [ ] Prometheus
+- [ ] Grafana
+- [ ] Dashboard com pelo menos 3 painéis
+- [ ] Guard-rail para a classe `urgente`
+
+As métricas planejadas são:
+
+```text
+triage_requests_total{endpoint,http_status}
+
+triage_request_latency_seconds{endpoint}
+
+triage_predictions_total{triage_level}
+```
+
+---
+
+## Etapa 4 — Otimização de Latência e Entrega
+
+- [ ] Exportação do modelo para ONNX
+- [ ] Inferência utilizando ONNX Runtime
+- [ ] Benchmark do modelo original
+- [ ] Benchmark do modelo otimizado
+- [ ] Comparação de latência
+- [ ] Atualização da arquitetura
+- [ ] Gravação do vídeo STAR
+- [ ] Consolidação da entrega final
+
+---
+
+# Relação com os requisitos do Tech Challenge
+
+| Requisito | Etapa | Status |
+|---|---|---|
+| Modelo NLP funcional | Etapa 0/0.5 | ✅ |
+| FastAPI | Etapa 1 | ✅ |
+| Dockerfile | Etapa 1 | ✅ |
+| Benchmark de latência | Etapa 1 | ✅ |
+| Decisão arquitetural | Etapa 1 | ✅ |
+| GitHub Actions | Etapa 2 | ⏳ |
+| DAG Airflow | Etapa 2 | ⏳ |
+| Prometheus | Etapa 3 | ⏳ |
+| Grafana | Etapa 3 | ⏳ |
+| Docker Compose | Etapa 3 | ⏳ |
+| Dashboard com 3 painéis | Etapa 3 | ⏳ |
+| Otimização com ONNX/quantização/pruning | Etapa 4 | ⏳ |
+| Comparação de latência | Etapa 4 | ⏳ |
+| Vídeo STAR | Etapa 4 | ⏳ |
+
+---
+
+# Próximas etapas
+
+Após a conclusão da Etapa 1, o próximo foco do projeto é a **Etapa 2 — CI/CD e Pipeline Automatizado**.
+
+O objetivo será automatizar:
+
+1. Verificação de qualidade do código com Ruff;
+2. Execução dos testes com pytest;
+3. Build da imagem Docker;
+4. Processo de treinamento através de uma DAG Airflow.
+
+Posteriormente, a Etapa 3 adicionará a stack de observabilidade com **Prometheus + Grafana**, e a Etapa 4 substituirá o backend de inferência por uma versão otimizada utilizando **ONNX Runtime**, permitindo comparar diretamente as latências dos dois modelos.
 
 ---
 
