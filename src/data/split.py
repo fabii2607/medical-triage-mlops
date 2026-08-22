@@ -1,10 +1,13 @@
 """Divisão estratificada 70/15/15 do dataset pseudo-rotulado (notebook 05).
 
 Uso:
-    uv run --no-sync python -m src.data.split
+    uv run --no-sync python -m src.data.split [--input caminho.csv]
 """
 
 from __future__ import annotations
+
+import argparse
+from pathlib import Path
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -18,8 +21,11 @@ from src.config import (
 )
 
 
-def load_pseudolabeled() -> pd.DataFrame:
-    path = PSEUDOLABELED_PATH if PSEUDOLABELED_PATH.exists() else CHECKPOINT_PATH
+def load_pseudolabeled(input_path: Path | None = None) -> pd.DataFrame:
+    if input_path is not None:
+        path = input_path
+    else:
+        path = PSEUDOLABELED_PATH if PSEUDOLABELED_PATH.exists() else CHECKPOINT_PATH
     if not path.exists():
         raise FileNotFoundError(
             "Nenhum dataset pseudo-rotulado encontrado. "
@@ -70,7 +76,16 @@ def make_splits(
 
 
 def main() -> None:
-    df = clean(load_pseudolabeled())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--input",
+        type=Path,
+        default=None,
+        help="CSV pseudo-rotulado alternativo (ex.: saída de --limit da pseudo-rotulagem)",
+    )
+    args = parser.parse_args()
+
+    df = clean(load_pseudolabeled(args.input))
     print(f"Registros após limpeza: {len(df):,}")
 
     train, validation, test = make_splits(df)
