@@ -59,7 +59,13 @@ def build_unique_abstracts() -> pd.DataFrame:
     test = pd.read_csv(TEST_PATH)
     labels = pd.read_csv(LABELS_PATH)
 
-    label_map = dict(zip(labels["condition_label"], labels["condition_name"]))
+    label_map = dict(
+        zip(
+            labels["condition_label"],
+            labels["condition_name"],
+            strict=True,
+        )
+    )
 
     combined = pd.concat(
         [train.assign(original_split="train"), test.assign(original_split="test")],
@@ -105,7 +111,9 @@ def add_token_stats(df: pd.DataFrame, tokenizer, max_length: int) -> pd.DataFram
     df["n_tokens"] = [len(ids) for ids in encodings]
     df["was_truncated"] = df["n_tokens"] > max_length
     truncated = df["was_truncated"].mean()
-    print(f"Textos acima de {max_length} tokens: {df['was_truncated'].sum():,} ({truncated:.1%})")
+    print(
+        f"Textos acima de {max_length} tokens: {df['was_truncated'].sum():,} ({truncated:.1%})"
+    )
     return df
 
 
@@ -134,8 +142,10 @@ def run(resume: bool = False, limit: int | None = None) -> pd.DataFrame:
         unique_abstracts = unique_abstracts[
             ~unique_abstracts["medical_abstract"].isin(done_texts)
         ].reset_index(drop=True)
-        print(f"Retomando do checkpoint: {len(done_rows):,} já processados, "
-              f"{len(unique_abstracts):,} restantes")
+        print(
+            f"Retomando do checkpoint: {len(done_rows):,} já processados, "
+            f"{len(unique_abstracts):,} restantes"
+        )
 
     # Com --limit (smoke test), grava num arquivo separado para não
     # sobrescrever o dataset completo nem o checkpoint.
@@ -159,7 +169,7 @@ def run(resume: bool = False, limit: int | None = None) -> pd.DataFrame:
         parsed = predict_batch(classifier, batch["medical_abstract"].tolist())
 
         for (_, record), (binary_prediction, urgent, nonurgent, confidence) in zip(
-            batch.iterrows(), parsed
+            batch.iterrows(), parsed, strict=True
         ):
             rows.append(
                 {

@@ -28,6 +28,7 @@ class TriageModel:
             for class_name, probability in zip(
                 self.model.classes_,
                 probabilities,
+                strict=True,
             )
         }
 

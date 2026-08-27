@@ -25,7 +25,7 @@ def test_threshold_customizado():
 
 
 def test_threshold_ambiguo_rejeitado():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"threshold deve ser > 0\.5"):
         map_to_three_levels(0.6, 0.4, threshold=0.5)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"threshold deve ser > 0\.5"):
         map_to_three_levels(0.6, 0.4, threshold=0.4)

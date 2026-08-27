@@ -25,10 +25,61 @@ dependencies = [
 dev = [
     "dvc[gs]>=3.67.1,<4",
     "httpx>=0.28.1",
+    "httpx2>=2.12,<3",
     "pytest>=9.1.1",
     "ruff>=0.16.1",
 ]
 
+# ── Ruff ────────────────────────────────────────────
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["."]
+include = ["*.py"]
+extend-exclude = [
+    "agents",
+    "data",
+    "docs",
+    "models",
+    "notebooks",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # Pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "BLE",  # flake8-blind-except
+    "SIM",  # flake8-simplify
+    "C4",   # flake8-comprehensions
+    "PT",   # flake8-pytest-style
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "E501",  # Line length handled by formatter
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "api",
+    "src",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+# ── Pytest ────────────────────────────────────────────
 [tool.pytest.ini_options]
-pythonpath = ["."]
 testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-v --tb=short"
+filterwarnings = [
+    "default::DeprecationWarning",
+    "default::PendingDeprecationWarning",
+]

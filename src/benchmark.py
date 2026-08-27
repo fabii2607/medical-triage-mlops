@@ -3,14 +3,10 @@ import time
 
 import httpx
 
-
 URL = "http://127.0.0.1:8000/predict"
 
 PAYLOAD = {
-    "text": (
-        "Patient presenting acute myocardial "
-        "infarction with severe chest pain."
-    )
+    "text": ("Patient presenting acute myocardial infarction with severe chest pain.")
 }
 
 N_REQUESTS = 100
@@ -20,9 +16,7 @@ WARMUP_REQUESTS = 10
 def percentile(values: list[float], percentile: float) -> float:
     sorted_values = sorted(values)
 
-    index = int(
-        percentile * (len(sorted_values) - 1)
-    )
+    index = int(percentile * (len(sorted_values) - 1))
 
     return sorted_values[index]
 
@@ -31,10 +25,7 @@ def main():
     latencies = []
 
     with httpx.Client() as client:
-
-        print(
-            f"Running {WARMUP_REQUESTS} warmup requests..."
-        )
+        print(f"Running {WARMUP_REQUESTS} warmup requests...")
 
         for _ in range(WARMUP_REQUESTS):
             client.post(
@@ -42,9 +33,7 @@ def main():
                 json=PAYLOAD,
             )
 
-        print(
-            f"Running {N_REQUESTS} benchmark requests..."
-        )
+        print(f"Running {N_REQUESTS} benchmark requests...")
 
         for _ in range(N_REQUESTS):
             start = time.perf_counter()
@@ -54,9 +43,7 @@ def main():
                 json=PAYLOAD,
             )
 
-            elapsed = (
-                time.perf_counter() - start
-            ) * 1000
+            elapsed = (time.perf_counter() - start) * 1000
 
             response.raise_for_status()
 

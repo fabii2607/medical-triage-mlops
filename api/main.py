@@ -11,16 +11,11 @@ from api.schemas import (
     PredictionResponse,
 )
 
-
 MODEL_VERSION = "logreg_tfidf_v2"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-MODEL_PATH = (
-    BASE_DIR
-    / "models"
-    / f"{MODEL_VERSION}.joblib"
-)
+MODEL_PATH = BASE_DIR / "models" / f"{MODEL_VERSION}.joblib"
 
 
 @asynccontextmanager
@@ -33,7 +28,8 @@ async def lifespan(app: FastAPI):
         app.state.model = model
         app.state.prediction_counter = Counter()
 
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001
+        # Keep the API alive so /health can report model unavailability.
         app.state.model = model
         app.state.prediction_counter = Counter()
 
@@ -45,8 +41,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Medical Triage API",
     description=(
-        "API for real-time medical report triage. "
-        "The model expects text in English."
+        "API for real-time medical report triage. The model expects text in English."
     ),
     version="1.0.0",
     lifespan=lifespan,
@@ -88,13 +83,9 @@ def predict(
             detail="Model is not loaded",
         )
 
-    triage_level, probabilities = model.predict(
-        payload.text
-    )
+    triage_level, probabilities = model.predict(payload.text)
 
-    request.app.state.prediction_counter[
-        triage_level
-    ] += 1
+    request.app.state.prediction_counter[triage_level] += 1
 
     return {
         "triage_level": triage_level,

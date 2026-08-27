@@ -90,7 +90,9 @@ def build_candidates() -> dict[str, Pipeline]:
 def load_split(name: str) -> pd.DataFrame:
     path = SPLITS_DIR / f"{name}.csv"
     if not path.exists():
-        raise FileNotFoundError(f"{path} não existe. Rode antes: python -m src.data.split")
+        raise FileNotFoundError(
+            f"{path} não existe. Rode antes: python -m src.data.split"
+        )
     return pd.read_csv(path)
 
 

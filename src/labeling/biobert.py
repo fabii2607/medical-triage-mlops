@@ -16,9 +16,7 @@ def load_tokenizer():
 def load_classifier():
     """Cria o pipeline de classificação, usando GPU quando disponível."""
     device = 0 if torch.cuda.is_available() else -1
-    device_name = (
-        torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-    )
+    device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
     print(f"Dispositivo de inferência: {device_name}")
 
     return pipeline(
