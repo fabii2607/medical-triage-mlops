@@ -1,23 +1,69 @@
-# Artefatos gerados pelo pipeline — regeneráveis via src/ (ver README)
-data/processed/
-models/*.joblib
-
-# Material do curso
-*.pdf
-
-# Ambiente virtual
-.venv/
-venv/
-
 # Python
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.ruff_cache/
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
 
-# Variáveis de ambiente
-.env
+# Virtual environments
+.venv/
+venv/
+env/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Tests and coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Data (versioned by DVC, not Git)
+data/raw/
+data/processed/**/*.csv
+data/processed/**/*.parquet
+data/processed/**/*.joblib
+data/interim/
+data/cache/
+
+# Models (versioned by DVC, not Git)
+models/**/*.joblib
+models/**/*.pkl
+models/**/*.onnx
+models/**/*.pt
+models/**/*.pth
+
+# Airflow local
+airflow.db
+airflow.cfg
+airflow-webserver.pid
+standalone_admin_password.txt
+.airflow/
+logs/
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+**/*credentials*.json
+**/*service-account*.json
+gha-creds-*.json
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
