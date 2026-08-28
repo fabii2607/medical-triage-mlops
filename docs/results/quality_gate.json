@@ -1,0 +1,31 @@
+{
+  "status": "approved",
+  "passed": true,
+  "split": "validation",
+  "checks": {
+    "required_classes": {
+      "expected": [
+        "normal",
+        "atenção",
+        "urgente"
+      ],
+      "observed": [
+        "atenção",
+        "normal",
+        "urgente"
+      ],
+      "passed": true
+    },
+    "macro_f1": {
+      "value": 0.7203,
+      "minimum": 0.7,
+      "passed": true
+    },
+    "urgent_recall": {
+      "value": 0.7389162561576355,
+      "minimum": 0.7,
+      "passed": true
+    }
+  },
+  "failures": []
+}

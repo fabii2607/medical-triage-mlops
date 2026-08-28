@@ -15,6 +15,7 @@ PARAMS_PATH = PROJECT_ROOT / "params.yaml"
 MODEL_PATH = MODELS_DIR / "logreg_tfidf.joblib"
 VALIDATION_METRICS_PATH = RESULTS_DIR / "validation_metrics.json"
 TEST_METRICS_PATH = RESULTS_DIR / "test_metrics.json"
+QUALITY_GATE_PATH = RESULTS_DIR / "quality_gate.json"
 
 TRAIN_PATH = RAW_DIR / "medical_tc_train.csv"
 TEST_PATH = RAW_DIR / "medical_tc_test.csv"

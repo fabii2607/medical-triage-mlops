@@ -1,0 +1,201 @@
+schema: '2.0'
+stages:
+  split:
+    cmd: uv run --no-sync python -m src.data.split
+    deps:
+    - path: data/processed/medical_abstracts_triage_pseudolabeled.csv
+      hash: md5
+      md5: 4c80dd6f77dba36af96a4f5c7b1d13cb
+      size: 15813523
+    - path: src/config.py
+      hash: md5
+      md5: fb6bdb20d022b3501855d30a8db0e612
+      size: 933
+    - path: src/constants.py
+      hash: md5
+      md5: 88727ce1c82b8abbb342fdf2d9586237
+      size: 109
+    - path: src/data/split.py
+      hash: md5
+      md5: f71f6c63bf3629e64ebbda5da5081155
+      size: 3674
+    - path: src/parameters.py
+      hash: md5
+      md5: e0a4a1cc04e494a239e81c84422adc5e
+      size: 3387
+    params:
+      params.yaml:
+        split.random_state: 42
+        split.test_size: 0.15
+        split.train_size: 0.7
+        split.validation_size: 0.15
+    outs:
+    - path: data/processed/splits
+      hash: md5
+      md5: daebbeeeb38e2a1591acf543bfff848b.dir
+      size: 15806101
+      nfiles: 3
+  train:
+    cmd: uv run --no-sync python -m src.training.train
+    deps:
+    - path: data/processed/splits/train.csv
+      hash: md5
+      md5: 59fe4b8cb92e689b469fda5e46465b8f
+      size: 11010664
+    - path: src/config.py
+      hash: md5
+      md5: fb6bdb20d022b3501855d30a8db0e612
+      size: 933
+    - path: src/constants.py
+      hash: md5
+      md5: 88727ce1c82b8abbb342fdf2d9586237
+      size: 109
+    - path: src/parameters.py
+      hash: md5
+      md5: e0a4a1cc04e494a239e81c84422adc5e
+      size: 3387
+    - path: src/training/pipeline.py
+      hash: md5
+      md5: 94b3b4976b45ab3faf97a75137f54c45
+      size: 2159
+    - path: src/training/train.py
+      hash: md5
+      md5: 868949b8b8f83711cc703cdde86a7a4e
+      size: 2653
+    params:
+      params.yaml:
+        train.logistic_regression:
+          C: 1.0
+          class_weight: balanced
+          max_iter: 2000
+          solver: lbfgs
+          random_state: 42
+        train.tfidf:
+          ngram_range:
+          - 1
+          - 2
+          min_df: 2
+          max_df: 0.95
+          max_features: 5000
+          stop_words: english
+          sublinear_tf: true
+    outs:
+    - path: models/logreg_tfidf.joblib
+      hash: md5
+      md5: aa2d57fafa1d83ad00fcd1502b9f4154
+      size: 317412
+  evaluate_validation:
+    cmd: uv run --no-sync python -m src.evaluation.evaluate --split validation
+    deps:
+    - path: data/processed/splits/validation.csv
+      hash: md5
+      md5: 783bb6007ededef416c8862daa4de7a9
+      size: 2403639
+    - path: models/logreg_tfidf.joblib
+      hash: md5
+      md5: aa2d57fafa1d83ad00fcd1502b9f4154
+      size: 317412
+    - path: src/config.py
+      hash: md5
+      md5: fb6bdb20d022b3501855d30a8db0e612
+      size: 933
+    - path: src/constants.py
+      hash: md5
+      md5: 88727ce1c82b8abbb342fdf2d9586237
+      size: 109
+    - path: src/evaluation/evaluate.py
+      hash: md5
+      md5: 624a9650e3d3108e2ce99ac23e15156b
+      size: 3680
+    - path: src/evaluation/metrics.py
+      hash: md5
+      md5: e015079c7cd1d55541f76386db03addd
+      size: 1928
+    - path: src/parameters.py
+      hash: md5
+      md5: e0a4a1cc04e494a239e81c84422adc5e
+      size: 3387
+    params:
+      params.yaml:
+        evaluate.latency_samples: 200
+    outs:
+    - path: docs/results/validation_metrics.json
+      hash: md5
+      md5: 5e09f65e653ae4a6655df4f7e2696d29
+      size: 1429
+  quality_gate:
+    cmd: uv run --no-sync python -m src.evaluation.quality_gate
+    deps:
+    - path: docs/results/validation_metrics.json
+      hash: md5
+      md5: 5e09f65e653ae4a6655df4f7e2696d29
+      size: 1429
+    - path: src/config.py
+      hash: md5
+      md5: fb6bdb20d022b3501855d30a8db0e612
+      size: 933
+    - path: src/constants.py
+      hash: md5
+      md5: 88727ce1c82b8abbb342fdf2d9586237
+      size: 109
+    - path: src/evaluation/quality_gate.py
+      hash: md5
+      md5: d34310d445dc8ec84d21645ab0260aad
+      size: 3997
+    - path: src/parameters.py
+      hash: md5
+      md5: e0a4a1cc04e494a239e81c84422adc5e
+      size: 3387
+    params:
+      params.yaml:
+        quality_gate.enabled: true
+        quality_gate.min_validation_macro_f1: 0.7
+        quality_gate.min_validation_urgent_recall: 0.7
+    outs:
+    - path: docs/results/quality_gate.json
+      hash: md5
+      md5: 38552952d71c32193ae51bb8b9a4e8dc
+      size: 530
+  evaluate_test:
+    cmd: uv run --no-sync python -m src.evaluation.evaluate --split test
+    deps:
+    - path: data/processed/splits/test.csv
+      hash: md5
+      md5: 8aae0751ec0ed092f106a1dc96052c97
+      size: 2391798
+    - path: docs/results/quality_gate.json
+      hash: md5
+      md5: 38552952d71c32193ae51bb8b9a4e8dc
+      size: 530
+    - path: models/logreg_tfidf.joblib
+      hash: md5
+      md5: aa2d57fafa1d83ad00fcd1502b9f4154
+      size: 317412
+    - path: src/config.py
+      hash: md5
+      md5: fb6bdb20d022b3501855d30a8db0e612
+      size: 933
+    - path: src/constants.py
+      hash: md5
+      md5: 88727ce1c82b8abbb342fdf2d9586237
+      size: 109
+    - path: src/evaluation/evaluate.py
+      hash: md5
+      md5: 624a9650e3d3108e2ce99ac23e15156b
+      size: 3680
+    - path: src/evaluation/metrics.py
+      hash: md5
+      md5: e015079c7cd1d55541f76386db03addd
+      size: 1928
+    - path: src/parameters.py
+      hash: md5
+      md5: e0a4a1cc04e494a239e81c84422adc5e
+      size: 3387
+    params:
+      params.yaml:
+        evaluate.latency_samples: 200
+    outs:
+    - path: docs/results/test_metrics.json
+      hash: md5
+      md5: 1f158118f8fcc3632e02c5f54aa177d9
+      size: 1410

@@ -46,6 +46,6 @@ evaluate:
   latency_samples: 200
 
 quality_gate:
-  enabled: false
-  min_validation_macro_f1: null
-  min_validation_urgent_recall: null
+  enabled: true
+  min_validation_macro_f1: 0.70
+  min_validation_urgent_recall: 0.70
