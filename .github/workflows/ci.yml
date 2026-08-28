@@ -42,6 +42,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --dev
 
+      - name: Validate DVC pipeline
+        run: uv run --no-sync dvc dag
+
       - name: Run lint
         run: uv run --no-sync ruff check .
 
