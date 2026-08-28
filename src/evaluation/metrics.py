@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,8 @@ from sklearn.metrics import (
 )
 
 
-def evaluate_predictions(y_true, y_pred, labels: list[str]) -> dict:
+def evaluate_predictions(y_true, y_pred, labels: Sequence[str]) -> dict:
+    label_order = list(labels)
     return {
         "accuracy": round(accuracy_score(y_true, y_pred), 4),
         "balanced_accuracy": round(balanced_accuracy_score(y_true, y_pred), 4),
@@ -31,14 +33,16 @@ def evaluate_predictions(y_true, y_pred, labels: list[str]) -> dict:
             f1_score(y_true, y_pred, average="macro", zero_division=0), 4
         ),
         "per_class": classification_report(
-            y_true, y_pred, labels=labels, zero_division=0, output_dict=True
+            y_true, y_pred, labels=label_order, zero_division=0, output_dict=True
         ),
-        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=labels).tolist(),
-        "confusion_matrix_labels": labels,
+        "confusion_matrix": confusion_matrix(
+            y_true, y_pred, labels=label_order
+        ).tolist(),
+        "confusion_matrix_labels": label_order,
     }
 
 
-def measure_latency(model, texts: pd.Series, n_samples: int = 200) -> dict:
+def measure_latency(model, texts: pd.Series, n_samples: int) -> dict:
     """Latência de predição unitária (um texto por chamada), em milissegundos."""
     sample = texts.sample(
         n=min(n_samples, len(texts)), random_state=0, replace=False

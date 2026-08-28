@@ -5,15 +5,11 @@ aprendida pelo modelo: é uma zona de incerteza definida por threshold,
 decisão registrada nos notebooks 02 e 03.
 """
 
-from __future__ import annotations
-
-from src.config import CONFIDENCE_THRESHOLD
-
 
 def map_to_three_levels(
     urgent_score: float,
     nonurgent_score: float,
-    threshold: float = CONFIDENCE_THRESHOLD,
+    threshold: float,
 ) -> str:
     """Mapeia os scores binários para normal / atenção / urgente.
 
