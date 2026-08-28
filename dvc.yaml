@@ -1,0 +1,84 @@
+stages:
+  split:
+    cmd: uv run --no-sync python -m src.data.split
+    deps:
+      - data/processed/medical_abstracts_triage_pseudolabeled.csv
+      - src/config.py
+      - src/constants.py
+      - src/data/split.py
+      - src/parameters.py
+    params:
+      - split.random_state
+      - split.train_size
+      - split.validation_size
+      - split.test_size
+    outs:
+      - data/processed/splits
+
+  train:
+    cmd: uv run --no-sync python -m src.training.train
+    deps:
+      - data/processed/splits/train.csv
+      - src/config.py
+      - src/constants.py
+      - src/parameters.py
+      - src/training/pipeline.py
+      - src/training/train.py
+    params:
+      - train.tfidf
+      - train.logistic_regression
+    outs:
+      - models/logreg_tfidf.joblib
+
+  evaluate_validation:
+    cmd: >-
+      uv run --no-sync python -m src.evaluation.evaluate
+      --split validation
+    deps:
+      - data/processed/splits/validation.csv
+      - models/logreg_tfidf.joblib
+      - src/config.py
+      - src/constants.py
+      - src/evaluation/evaluate.py
+      - src/evaluation/metrics.py
+      - src/parameters.py
+    params:
+      - evaluate.latency_samples
+    metrics:
+      - docs/results/validation_metrics.json:
+          cache: false
+
+  quality_gate:
+    cmd: uv run --no-sync python -m src.evaluation.quality_gate
+    deps:
+      - docs/results/validation_metrics.json
+      - src/config.py
+      - src/constants.py
+      - src/evaluation/quality_gate.py
+      - src/parameters.py
+    params:
+      - quality_gate.enabled
+      - quality_gate.min_validation_macro_f1
+      - quality_gate.min_validation_urgent_recall
+    outs:
+      - docs/results/quality_gate.json:
+          cache: false
+
+  evaluate_test:
+    cmd: >-
+      uv run --no-sync python -m src.evaluation.evaluate
+      --split test
+    deps:
+      - data/processed/splits/test.csv
+      - docs/results/quality_gate.json
+      - models/logreg_tfidf.joblib
+      - src/config.py
+      - src/constants.py
+      - src/evaluation/evaluate.py
+      - src/evaluation/metrics.py
+      - src/parameters.py
+    params:
+      - evaluate.latency_samples
+    metrics:
+      - docs/results/test_metrics.json:
+          cache: false

@@ -1,0 +1,71 @@
+{
+  "model": "logreg_tfidf",
+  "split": "test",
+  "n_samples": 1685,
+  "model_size_mb": 0.3,
+  "accuracy": 0.768,
+  "balanced_accuracy": 0.7782,
+  "macro_precision": 0.7325,
+  "macro_recall": 0.7782,
+  "macro_f1": 0.7496,
+  "per_class": {
+    "normal": {
+      "precision": 0.8401084010840109,
+      "recall": 0.8255659121171771,
+      "f1-score": 0.8327736736064473,
+      "support": 751.0
+    },
+    "atenção": {
+      "precision": 0.7574404761904762,
+      "recall": 0.6963064295485636,
+      "f1-score": 0.7255880256593015,
+      "support": 731.0
+    },
+    "urgente": {
+      "precision": 0.6,
+      "recall": 0.812807881773399,
+      "f1-score": 0.6903765690376569,
+      "support": 203.0
+    },
+    "accuracy": 0.7679525222551928,
+    "macro avg": {
+      "precision": 0.7325162924248291,
+      "recall": 0.7782267411463799,
+      "f1-score": 0.7495794227678019,
+      "support": 1685.0
+    },
+    "weighted avg": {
+      "precision": 0.775317743210285,
+      "recall": 0.7679525222551928,
+      "f1-score": 0.769118290296757,
+      "support": 1685.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      620,
+      126,
+      5
+    ],
+    [
+      117,
+      509,
+      105
+    ],
+    [
+      1,
+      37,
+      165
+    ]
+  ],
+  "confusion_matrix_labels": [
+    "normal",
+    "atenção",
+    "urgente"
+  ],
+  "latency": {
+    "latency_mean_ms": 0.377,
+    "latency_p95_ms": 0.438,
+    "n_samples": 200
+  }
+}

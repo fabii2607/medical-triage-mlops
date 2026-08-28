@@ -19,21 +19,16 @@ import time
 import pandas as pd
 
 from src.config import (
-    BATCH_SIZE,
-    CHECKPOINT_EVERY,
     CHECKPOINT_PATH,
-    CONFIDENCE_THRESHOLD,
     LABELS_PATH,
-    MAX_LENGTH,
     PROCESSED_DIR,
-    PSEUDOLABEL_MODEL,
     PSEUDOLABELED_PATH,
-    RANDOM_STATE,
     TEST_PATH,
     TRAIN_PATH,
 )
 from src.labeling.biobert import load_classifier, load_tokenizer, predict_batch
 from src.labeling.triage_rules import map_to_three_levels
+from src.parameters import LabelingParams, load_params
 
 RESULT_COLUMNS = [
     "medical_abstract",
@@ -53,13 +48,19 @@ RESULT_COLUMNS = [
 ]
 
 
-def build_unique_abstracts() -> pd.DataFrame:
+def build_unique_abstracts(random_state: int) -> pd.DataFrame:
     """Consolida treino+teste em abstracts únicos, preservando rastreabilidade."""
     train = pd.read_csv(TRAIN_PATH)
     test = pd.read_csv(TEST_PATH)
     labels = pd.read_csv(LABELS_PATH)
 
-    label_map = dict(zip(labels["condition_label"], labels["condition_name"]))
+    label_map = dict(
+        zip(
+            labels["condition_label"],
+            labels["condition_name"],
+            strict=True,
+        )
+    )
 
     combined = pd.concat(
         [train.assign(original_split="train"), test.assign(original_split="test")],
@@ -90,7 +91,7 @@ def build_unique_abstracts() -> pd.DataFrame:
 
     # O groupby ordena alfabeticamente; o shuffle garante que qualquer
     # interrupção deixe um subconjunto representativo, não enviesado.
-    return unique_abstracts.sample(frac=1, random_state=RANDOM_STATE).reset_index(
+    return unique_abstracts.sample(frac=1, random_state=random_state).reset_index(
         drop=True
     )
 
@@ -105,7 +106,9 @@ def add_token_stats(df: pd.DataFrame, tokenizer, max_length: int) -> pd.DataFram
     df["n_tokens"] = [len(ids) for ids in encodings]
     df["was_truncated"] = df["n_tokens"] > max_length
     truncated = df["was_truncated"].mean()
-    print(f"Textos acima de {max_length} tokens: {df['was_truncated'].sum():,} ({truncated:.1%})")
+    print(
+        f"Textos acima de {max_length} tokens: {df['was_truncated'].sum():,} ({truncated:.1%})"
+    )
     return df
 
 
@@ -113,11 +116,19 @@ def finalize(rows: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=RESULT_COLUMNS)
 
 
-def run(resume: bool = False, limit: int | None = None) -> pd.DataFrame:
+def run(
+    params: LabelingParams,
+    resume: bool = False,
+    limit: int | None = None,
+    checkpoint_every: int = 500,
+) -> pd.DataFrame:
+    if checkpoint_every <= 0:
+        raise ValueError("checkpoint_every deve ser maior que zero")
+
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-    tokenizer = load_tokenizer()
-    unique_abstracts = build_unique_abstracts()
+    tokenizer = load_tokenizer(params.model_name)
+    unique_abstracts = build_unique_abstracts(params.random_state)
     print(f"Abstracts únicos: {len(unique_abstracts):,}")
 
     done_rows: list[dict] = []
@@ -125,17 +136,19 @@ def run(resume: bool = False, limit: int | None = None) -> pd.DataFrame:
         checkpoint = pd.read_csv(CHECKPOINT_PATH)
         # Só aproveita registros gerados com a mesma configuração.
         compatible = checkpoint[
-            (checkpoint["max_length"] == MAX_LENGTH)
-            & (checkpoint["pseudolabel_threshold"] == CONFIDENCE_THRESHOLD)
-            & (checkpoint["pseudolabel_model"] == PSEUDOLABEL_MODEL)
+            (checkpoint["max_length"] == params.max_length)
+            & (checkpoint["pseudolabel_threshold"] == params.confidence_threshold)
+            & (checkpoint["pseudolabel_model"] == params.model_name)
         ]
         done_rows = compatible[RESULT_COLUMNS].to_dict("records")
         done_texts = set(compatible["medical_abstract"])
         unique_abstracts = unique_abstracts[
             ~unique_abstracts["medical_abstract"].isin(done_texts)
         ].reset_index(drop=True)
-        print(f"Retomando do checkpoint: {len(done_rows):,} já processados, "
-              f"{len(unique_abstracts):,} restantes")
+        print(
+            f"Retomando do checkpoint: {len(done_rows):,} já processados, "
+            f"{len(unique_abstracts):,} restantes"
+        )
 
     # Com --limit (smoke test), grava num arquivo separado para não
     # sobrescrever o dataset completo nem o checkpoint.
@@ -145,26 +158,35 @@ def run(resume: bool = False, limit: int | None = None) -> pd.DataFrame:
     else:
         checkpoint_path = CHECKPOINT_PATH
 
-    unique_abstracts = add_token_stats(unique_abstracts, tokenizer, MAX_LENGTH)
+    unique_abstracts = add_token_stats(unique_abstracts, tokenizer, params.max_length)
 
-    classifier = load_classifier()
+    classifier = load_classifier(params.model_name)
 
     rows = list(done_rows)
     total = len(done_rows) + len(unique_abstracts)
     start_time = time.perf_counter()
     since_checkpoint = 0
 
-    for start in range(0, len(unique_abstracts), BATCH_SIZE):
-        batch = unique_abstracts.iloc[start : start + BATCH_SIZE]
-        parsed = predict_batch(classifier, batch["medical_abstract"].tolist())
+    for start in range(0, len(unique_abstracts), params.batch_size):
+        batch = unique_abstracts.iloc[start : start + params.batch_size]
+        parsed = predict_batch(
+            classifier,
+            batch["medical_abstract"].tolist(),
+            batch_size=params.batch_size,
+            max_length=params.max_length,
+        )
 
         for (_, record), (binary_prediction, urgent, nonurgent, confidence) in zip(
-            batch.iterrows(), parsed
+            batch.iterrows(), parsed, strict=True
         ):
             rows.append(
                 {
                     "medical_abstract": record["medical_abstract"],
-                    "triage_level": map_to_three_levels(urgent, nonurgent),
+                    "triage_level": map_to_three_levels(
+                        urgent,
+                        nonurgent,
+                        threshold=params.confidence_threshold,
+                    ),
                     "urgent_score": urgent,
                     "nonurgent_score": nonurgent,
                     "confidence": confidence,
@@ -174,14 +196,14 @@ def run(resume: bool = False, limit: int | None = None) -> pd.DataFrame:
                     "original_condition_labels": record["original_condition_labels"],
                     "original_condition_names": record["original_condition_names"],
                     "original_splits": record["original_splits"],
-                    "pseudolabel_model": PSEUDOLABEL_MODEL,
-                    "pseudolabel_threshold": CONFIDENCE_THRESHOLD,
-                    "max_length": MAX_LENGTH,
+                    "pseudolabel_model": params.model_name,
+                    "pseudolabel_threshold": params.confidence_threshold,
+                    "max_length": params.max_length,
                 }
             )
 
         since_checkpoint += len(batch)
-        if since_checkpoint >= CHECKPOINT_EVERY:
+        if since_checkpoint >= checkpoint_every:
             finalize(rows).to_csv(checkpoint_path, index=False)
             since_checkpoint = 0
             elapsed = time.perf_counter() - start_time
@@ -223,8 +245,19 @@ def main() -> None:
         default=None,
         help="processa apenas N abstracts (para teste rápido)",
     )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=500,
+        help="salva o progresso a cada N abstracts processados",
+    )
     args = parser.parse_args()
-    run(resume=args.resume, limit=args.limit)
+    run(
+        load_params().labeling,
+        resume=args.resume,
+        limit=args.limit,
+        checkpoint_every=args.checkpoint_every,
+    )
 
 
 if __name__ == "__main__":

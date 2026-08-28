@@ -6,25 +6,21 @@ import numpy as np
 import torch
 from transformers import AutoTokenizer, pipeline
 
-from src.config import BATCH_SIZE, MAX_LENGTH, PSEUDOLABEL_MODEL
+
+def load_tokenizer(model_name: str):
+    return AutoTokenizer.from_pretrained(model_name)
 
 
-def load_tokenizer():
-    return AutoTokenizer.from_pretrained(PSEUDOLABEL_MODEL)
-
-
-def load_classifier():
+def load_classifier(model_name: str):
     """Cria o pipeline de classificação, usando GPU quando disponível."""
     device = 0 if torch.cuda.is_available() else -1
-    device_name = (
-        torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
-    )
+    device_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
     print(f"Dispositivo de inferência: {device_name}")
 
     return pipeline(
         task="text-classification",
-        model=PSEUDOLABEL_MODEL,
-        tokenizer=PSEUDOLABEL_MODEL,
+        model=model_name,
+        tokenizer=model_name,
         device=device,
     )
 
@@ -70,8 +66,8 @@ def parse_prediction(prediction_items) -> tuple[str, float, float, float]:
 def predict_batch(
     classifier,
     texts: list[str],
-    batch_size: int = BATCH_SIZE,
-    max_length: int = MAX_LENGTH,
+    batch_size: int,
+    max_length: int,
 ) -> list[tuple[str, float, float, float]]:
     """Roda o pipeline em um lote de textos e devolve as tuplas já parseadas."""
     raw = classifier(

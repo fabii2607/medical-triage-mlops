@@ -15,10 +15,10 @@ from sklearn.model_selection import train_test_split
 from src.config import (
     CHECKPOINT_PATH,
     PSEUDOLABELED_PATH,
-    RANDOM_STATE,
     SPLITS_DIR,
-    TRIAGE_LEVELS,
 )
+from src.constants import TRIAGE_LEVELS
+from src.parameters import SplitParams, load_params
 
 
 def load_pseudolabeled(input_path: Path | None = None) -> pd.DataFrame:
@@ -47,20 +47,22 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
 
 def make_splits(
     df: pd.DataFrame,
-    random_state: int = RANDOM_STATE,
+    params: SplitParams,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """70% treino / 15% validação / 15% teste, estratificado por triage_level."""
+    """Divide os dados nas proporções configuradas, com estratificação."""
+    remaining_size = params.validation_size + params.test_size
     train, rest = train_test_split(
         df,
-        test_size=0.30,
+        test_size=remaining_size,
         stratify=df["triage_level"],
-        random_state=random_state,
+        random_state=params.random_state,
     )
+    relative_test_size = params.test_size / remaining_size
     validation, test = train_test_split(
         rest,
-        test_size=0.50,
+        test_size=relative_test_size,
         stratify=rest["triage_level"],
-        random_state=random_state,
+        random_state=params.random_state,
     )
 
     for name, part in [("train", train), ("validation", validation), ("test", test)]:
@@ -69,9 +71,11 @@ def make_splits(
         assert len(overlap) == 0, f"Vazamento de texto entre {name} e os demais splits"
 
     return (
-        train.sample(frac=1, random_state=random_state).reset_index(drop=True),
-        validation.sample(frac=1, random_state=random_state).reset_index(drop=True),
-        test.sample(frac=1, random_state=random_state).reset_index(drop=True),
+        train.sample(frac=1, random_state=params.random_state).reset_index(drop=True),
+        validation.sample(frac=1, random_state=params.random_state).reset_index(
+            drop=True
+        ),
+        test.sample(frac=1, random_state=params.random_state).reset_index(drop=True),
     )
 
 
@@ -88,7 +92,7 @@ def main() -> None:
     df = clean(load_pseudolabeled(args.input))
     print(f"Registros após limpeza: {len(df):,}")
 
-    train, validation, test = make_splits(df)
+    train, validation, test = make_splits(df, load_params().split)
 
     SPLITS_DIR.mkdir(parents=True, exist_ok=True)
     train.to_csv(SPLITS_DIR / "train.csv", index=False)
