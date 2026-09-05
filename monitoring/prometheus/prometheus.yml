@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "medical-triage-api-gcp"
+    scheme: https
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "medical-triage-api-105159782870.southamerica-east1.run.app"
