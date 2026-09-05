@@ -1,0 +1,41 @@
+# Git
+.git
+.git/**
+
+# Virtual environments
+.venv
+.venv/**
+venv
+venv/**
+
+# Python cache
+__pycache__
+**/__pycache__/**
+*.pyc
+
+# Local datasets and artifacts not needed by the API
+data
+data/**
+notebooks
+notebooks/**
+
+# Local development files
+.vscode
+.vscode/**
+.idea
+.idea/**
+
+# Logs and caches
+logs
+logs/**
+.pytest_cache
+.pytest_cache/**
+.ruff_cache
+.ruff_cache/**
+
+# DVC cache
+.dvc/cache
+.dvc/cache/**
+
+# Important:
+# Do NOT ignore models/logreg_tfidf.joblib
