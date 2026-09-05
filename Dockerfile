@@ -1,26 +1,39 @@
-FROM python:3.11-slim
+FROM python:3.11.15-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV UV_COMPILE_BYTECODE=1
+ENV PATH="/app/.venv/bin:$PATH"
 
 WORKDIR /app
 
-# Instala o uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# Instala uma versão fixa do uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.6 /uv /uvx /bin/
 
-# Instala somente as dependências necessárias para a API
-RUN uv pip install \
-    --system \
-    "fastapi>=0.141.1" \
-    "joblib>=1.5.3" \
-    "numpy>=2.4.6" \
-    "pydantic>=2.13.4" \
-    "scikit-learn>=1.9.0" \
-    "uvicorn[standard]>=0.52.0"
+# Instala somente o núcleo compartilhado e o extra da API.
+COPY pyproject.toml uv.lock ./
+RUN uv sync \
+    --locked \
+    --no-default-groups \
+    --extra api \
+    --no-install-project \
+    --no-cache
+
+# Cria um usuário sem privilégios para executar a API.
+RUN groupadd --gid 10001 app \
+    && useradd \
+    --uid 10001 \
+    --gid app \
+    --home-dir /app \
+    --no-create-home \
+    --shell /usr/sbin/nologin \
+    app
 
 # Copia a API e o modelo
 COPY api/ ./api/
 COPY models/ ./models/
+
+USER app
 
 EXPOSE 8000
 

@@ -1,34 +1,57 @@
 [project]
 name = "medical-triage-mlops-main"
 version = "0.1.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    "fastapi>=0.141.1",
-    "ipykernel>=7.3.0",
     "joblib>=1.5.3",
-    "jupyter>=1.1.1",
-    "matplotlib>=3.11.1",
     "numpy>=2.4.6",
-    "onnx>=1.22.0",
-    "onnxruntime>=1.28.0",
     "pandas>=3.0.5",
-    "prometheus-client>=0.26.0",
     "pydantic>=2.13.4",
     "pyyaml>=6,<7",
     "scikit-learn>=1.9.0",
-    "skl2onnx>=1.20.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.141.1",
+    "prometheus-client>=0.26.0",
+    "uvicorn[standard]>=0.52.0",
+]
+labeling = [
     "torch>=2.13.0",
     "transformers>=5.14.1",
-    "uvicorn[standard]>=0.52.0",
 ]
 
 [dependency-groups]
-dev = [
+mlops = [
     "dvc[gs]>=3.67.1,<4",
+]
+dev = [
+    { include-group = "mlops" },
     "httpx>=0.28.1",
     "httpx2>=2.12,<3",
+    "ipykernel>=7.3.0",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.11.1",
+    "onnx>=1.22.0",
+    "onnxruntime>=1.28.0",
     "pytest>=9.1.1",
     "ruff>=0.16.1",
+    "skl2onnx>=1.20.0",
+]
+airflow = [
+    { include-group = "mlops" },
+    "apache-airflow==3.1.7",
+]
+
+[tool.uv]
+required-version = ">=0.12.6,<0.13"
+default-groups = ["dev"]
+conflicts = [
+    [
+        { extra = "api" },
+        { group = "airflow" },
+    ],
 ]
 
 # ── Ruff ────────────────────────────────────────────

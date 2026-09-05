@@ -1,20 +1,14 @@
-.git
-.gitignore
-.github
+*
 
-.venv
-__pycache__
-.pytest_cache
-.mypy_cache
-.ruff_cache
+!Dockerfile
+!pyproject.toml
+!uv.lock
 
-.ipynb_checkpoints
-*.ipynb
+!api/
+!api/**
 
-notebooks
-tests
+!models/
+!models/**
 
-*.pyc
-*.pyo
-
-.DS_Store
+**/__pycache__/
+**/*.py[cod]

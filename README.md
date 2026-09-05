@@ -15,7 +15,7 @@ Uma regra baseada em threshold cria a zona de incerteza `atenção`, e posterior
 
 O modelo escolhido para produção é o `logreg_tfidf_v2`, com aproximadamente **0,3 MB**, baixa latência de inferência e sem necessidade de `torch`, `transformers` ou GPU no serving.
 
-> Projeto do **Tech Challenge Fase 3 — POSTECH (MLET)**. Contexto-mestre e registro de decisões em [PLANNING.md](PLANNING.md).
+> Projeto do **Tech Challenge Fase 3 — POSTECH (MLET)**. As decisões sobre dependências, ambientes, Docker e CI estão registradas em [docs/dependency-management.md](docs/dependency-management.md).
 
 ---
 
@@ -35,7 +35,7 @@ A escolha considera principalmente o desempenho na classe `urgente`, que represe
 
 As métricas completas, incluindo métricas por classe, matriz de confusão, validação e teste estão disponíveis em:
 
-[docs/results/triage_metrics_v2.json](docs/results/triage_metrics_v2.json)
+[docs/results/test_metrics.json](docs/results/test_metrics.json)
 
 ---
 
@@ -75,7 +75,7 @@ A classe `atenção` **não é aprendida diretamente pelo BioBERT**. Ela represe
 
 `0,30 ≤ urgent_score < 0,70`
 
-Essa decisão está documentada nos notebooks e no [PLANNING.md](PLANNING.md).
+Essa decisão está documentada nos notebooks e nos artefatos de avaliação em `docs/results/`.
 
 ---
 
@@ -87,40 +87,40 @@ O sistema foi projetado considerando dois tipos diferentes de processamento.
 
 A triagem de um laudo deve acontecer no momento em que o texto chega ao sistema. Por isso, a inferência é realizada através de uma **API REST em FastAPI**, empacotada em um container Docker.
 
-A arquitetura proposta para produção em AWS é:
+A arquitetura proposta para produção no Google Cloud é:
 
 ```text
 Cliente
    |
    v
-API FastAPI
+Cloud Run
    |
    v
-Container Docker
+Container FastAPI
    |
    v
 Modelo TF-IDF + Logistic Regression
 ```
 
-Para uma implantação em nuvem, a arquitetura considerada é:
+Os principais serviços planejados são:
 
 ```text
-Cliente
+Google Cloud
    |
-   v
-AWS
+   +--> Artifact Registry
+   |     Imagem da API
    |
-   +--> ECR
-   |     Container da API
+   +--> Cloud Run
+   |     Serving HTTP
    |
-   +--> ECS Fargate
-   |     Serviço FastAPI
+   +--> Cloud Storage
+   |     Remote do DVC
    |
-   +--> CloudWatch
-         Logs e métricas
+   +--> Cloud Composer
+         Orquestração Airflow
 ```
 
-O **Amazon ECR** seria utilizado para armazenar a imagem Docker, enquanto o **Amazon ECS com Fargate** seria utilizado para executar o serviço sem necessidade de gerenciamento direto de servidores.
+O **Artifact Registry** armazenará a imagem Docker, o **Cloud Run** executará a API e o **Cloud Composer** será avaliado para hospedar a orquestração do Airflow. Dados e modelos versionados pelo DVC utilizam um remote no Cloud Storage.
 
 ### Treinamento — Batch
 
@@ -153,7 +153,8 @@ Essa separação evita que processos pesados de treinamento afetem a disponibili
 
 ## Pré-requisitos
 
-- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** — gerenciamento do ambiente Python e das dependências através do `uv.lock`.
+- **Python 3.11** — o projeto aceita `>=3.11,<3.12`.
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** `>=0.12.6,<0.13` — gerenciamento do ambiente e das dependências através do `uv.lock`.
 - **Docker Desktop** — necessário para executar a API em container.
 
 ### Instalação do uv
@@ -165,6 +166,14 @@ curl -sSf https://astral.sh/uv/install.sh | sh
 # Windows
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
+
+Confirme a versão instalada:
+
+```bash
+uv --version
+```
+
+O uv não se atualiza automaticamente caso a versão instalada seja incompatível com o projeto.
 
 ### GPU — opcional
 
@@ -190,9 +199,9 @@ para evitar que um `uv sync` reverta a instalação para a versão CPU.
 
 ## Dados e artefatos
 
-- `data/raw/` está no Git e contém o dataset original.
-- `data/processed/` está fora do Git e contém dados intermediários regeneráveis.
-- `models/*.joblib` está fora do Git e contém artefatos regeneráveis.
+- `data/raw.dvc` referencia o dataset original versionado pelo DVC.
+- `data/processed/*.dvc` referencia datasets processados versionados pelo DVC.
+- `models/*.joblib` está fora do Git e seus artefatos são armazenados pelo DVC.
 - `docs/results/*.json` permanece no Git como referência das métricas.
 
 O modelo utilizado pela API é:
@@ -232,28 +241,65 @@ cd medical-triage-mlops
 
 ### 2. Instalar as dependências
 
+Ambiente principal completo, incluindo API, notebooks e BioBERT:
+
 ```bash
-uv sync
+uv sync --locked --extra api --extra labeling
 ```
+
+Para trabalhar sem Torch e Transformers:
+
+```bash
+uv sync --locked --extra api
+```
+
+### Ambientes locais
+
+A `.venv` é utilizada para API, desenvolvimento, testes e notebooks. O Airflow possui uma virtualenv própria porque Airflow 3.1.7 e a API exigem versões incompatíveis do FastAPI:
+
+```bash
+UV_PROJECT_ENVIRONMENT=.venv-airflow \
+uv sync --locked --no-default-groups --group airflow
+```
+
+Para confirmar a instalação:
+
+```bash
+UV_PROJECT_ENVIRONMENT=.venv-airflow \
+uv run --no-sync airflow version
+```
+
+`UV_PROJECT_ENVIRONMENT` altera a pasta usada pelo uv somente no comando em que foi declarada. Sem essa variável, o uv utiliza `.venv`.
+
+### Kernel dos notebooks no VS Code
+
+Depois de criar o ambiente principal com o extra `labeling`:
+
+1. Abra o notebook.
+2. Clique em **Select Kernel**.
+3. Selecione **Python Environments**.
+4. Selecione `.venv/bin/python` no macOS/Linux ou `.venv\Scripts\python.exe` no Windows.
+
+Cada integrante cria sua própria `.venv`; a pasta não é enviada ao Git. Todos os notebooks podem inicialmente utilizar esse mesmo kernel. Mais detalhes estão em [docs/dependency-management.md](docs/dependency-management.md).
 
 ### 3. Verificar os testes
 
 ```bash
-uv run pytest
+uv run --no-sync pytest
 ```
 
-Atualmente, o projeto possui **17 testes**, cobrindo a API, métricas, split dos dados e regras de triagem.
+Atualmente, o projeto possui **35 testes**, cobrindo API, treinamento, avaliação, quality gate, parâmetros, métricas, split e regras de triagem.
 
 Exemplo de resultado:
 
 ```text
-17 passed
+35 passed
 ```
 
 ### 4. Executar a API localmente
 
 ```bash
-uv run uvicorn api.main:app --reload
+uv run --no-sync uvicorn api.main:app --reload
 ```
 
 A API estará disponível em:
@@ -444,16 +490,18 @@ A API possui um `Dockerfile` específico para o serving.
 A imagem utiliza:
 
 ```text
-python:3.11-slim
+python:3.11.15-slim-bookworm
 ```
 
-e instala apenas as dependências necessárias para execução da API, evitando incluir no container de serving os componentes pesados utilizados no treinamento, como:
+As dependências são instaladas a partir do `pyproject.toml` e do `uv.lock`, selecionando somente o núcleo compartilhado e o extra `api`. Isso evita incluir no container de serving componentes pesados utilizados no treinamento, como:
 
 - PyTorch;
 - Transformers;
 - Jupyter;
 - ferramentas de desenvolvimento;
 - dependências utilizadas exclusivamente no pipeline offline.
+
+O processo da API executa como o usuário não privilegiado `app` (UID/GID 10001).
 
 O modelo `logreg_tfidf_v2.joblib` é incluído na imagem para que o container seja autocontido.
 
@@ -535,13 +583,13 @@ A suíte cobre:
 A suíte completa pode ser executada com:
 
 ```bash
-uv run pytest
+uv run --no-sync pytest
 ```
 
 Resultado atual:
 
 ```text
-17 passed
+35 passed
 ```
 
 ---
@@ -590,15 +638,13 @@ medical-triage-mlops/
 ├── models/                  # Modelos treinados
 │
 ├── docs/
+│   ├── dependency-management.md
 │   └── results/             # Métricas de referência
 │
 ├── tests/                   # Testes automatizados
 │
-├── dags/                    # (Etapa 2) DAG Airflow
-│
 ├── monitoring/              # (Etapa 3) Prometheus + Grafana
 │
-├── PLANNING.md              # Contexto e decisões do projeto
 ├── Dockerfile               # Container da API
 ├── pyproject.toml           # Dependências e configuração
 └── uv.lock                  # Dependências fixadas
@@ -620,7 +666,7 @@ medical-triage-mlops/
 | Otimização | ONNX Runtime |
 | Qualidade | Ruff + pytest + type hints |
 | Ambiente | uv + `uv.lock` |
-| Deploy em nuvem | AWS — ECR + ECS Fargate + CloudWatch |
+| Deploy em nuvem | GCP — Artifact Registry + Cloud Run |
 
 ---
 
@@ -628,9 +674,9 @@ medical-triage-mlops/
 
 | Documento | Descrição |
 |---|---|
-| [PLANNING.md](PLANNING.md) | Contexto-mestre: decisões técnicas, arquitetura, etapas e riscos |
-| [Resumo dos notebooks](docs/resumo_notebooks_refatoracao.md) | Descrição dos notebooks e correções realizadas |
-| [Métricas v2](docs/results/triage_metrics_v2.json) | Métricas completas dos modelos treinados no corpus completo |
+| [Gerenciamento de dependências](docs/dependency-management.md) | Ambientes, extras, grupos, Docker e CI |
+| [Métricas de validação](docs/results/validation_metrics.json) | Métricas usadas pelo quality gate |
+| [Métricas de teste](docs/results/test_metrics.json) | Avaliação final do modelo aprovado |
 
 ---
 
@@ -675,7 +721,7 @@ O projeto está dividido nas quatro etapas definidas pelo Tech Challenge.
 - [x] API executando em container Docker
 - [x] Benchmark de latência da API
 - [x] Baseline de latência local documentado
-- [x] Documentação da arquitetura AWS no README
+- [x] Documentação da arquitetura GCP no README
 
 ### Resultado do benchmark
 
@@ -688,13 +734,15 @@ P95: 6.37 ms
 
 ## Etapa 2 — CI/CD e Pipeline Automatizado
 
-- [ ] GitHub Actions
-- [ ] Automação de lint
-- [ ] Automação de testes
+- [x] GitHub Actions
+- [x] Automação de lint
+- [x] Automação de testes
+- [x] Pipeline reproduzível com DVC
+- [x] Quality gate do modelo
 - [ ] Build automático da imagem Docker
 - [ ] DAG Airflow
 - [ ] Pipeline de retreinamento
-- [ ] Ingestão → pseudo-labeling → split → treino → avaliação
+- [ ] Orquestração do split → treino → avaliação → publicação
 
 ---
 
