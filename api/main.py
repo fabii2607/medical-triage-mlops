@@ -1,5 +1,4 @@
 import time
-
 from collections import Counter as CollectionCounter
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -20,12 +19,11 @@ from api.schemas import (
     PredictionResponse,
 )
 
-
-MODEL_VERSION = "logreg_tfidf"
+MODEL_VERSION = "logreg_tfidf_v2"
+MODEL_FILENAME = "logreg_tfidf.joblib"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-MODEL_PATH = BASE_DIR / "models" / f"{MODEL_VERSION}.joblib"
-
+MODEL_PATH = BASE_DIR / "models" / MODEL_FILENAME
 
 REQUEST_COUNT = Counter(
     "medical_triage_requests_total",
@@ -67,8 +65,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Medical Triage API",
     description=(
-        "API for real-time medical report triage. "
-        "The model expects text in English."
+        "API for real-time medical report triage. The model expects text in English."
     ),
     version="1.0.0",
     lifespan=lifespan,
