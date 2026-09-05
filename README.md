@@ -5,6 +5,8 @@
 ![Transformers](https://img.shields.io/badge/BioBERT-pseudo--labeling-FFD21E?logo=huggingface&logoColor=black)
 ![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-container-2496ED?logo=docker&logoColor=white)
+![Prometheus](https://img.shields.io/badge/Prometheus-monitoring-E6522C?logo=prometheus&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-observability-F46800?logo=grafana&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 Sistema **MLOps de triagem automática de laudos médicos**: dado o texto de um laudo/abstract, o modelo classifica em **3 níveis de urgência** — `urgente`, `atenção`, `normal` — para priorizar a fila de atendimento.
@@ -53,15 +55,19 @@ flowchart LR
 
     subgraph ONLINE["Online — Real-time"]
         F["FastAPI<br/>/predict"] --> G["Container Docker"]
+        G --> H["Google Cloud Run"]
+        H --> I["/metrics"]
+        I --> J["Prometheus"]
+        J --> K["Grafana"]
     end
 
     E -->|"joblib"| F
 
-    G -.-> H["Prometheus + Grafana<br/>(Etapa 3)"]
-
     style B fill:#dbeafe,stroke:#2563eb
     style E fill:#dcfce7,stroke:#16a34a
     style F fill:#fef9c3,stroke:#ca8a04
+    style J fill:#fee2e2,stroke:#dc2626
+    style K fill:#ffedd5,stroke:#f97316
 ```
 
 O fluxo possui duas partes principais:
@@ -87,7 +93,7 @@ O sistema foi projetado considerando dois tipos diferentes de processamento.
 
 A triagem de um laudo deve acontecer no momento em que o texto chega ao sistema. Por isso, a inferência é realizada através de uma **API REST em FastAPI**, empacotada em um container Docker.
 
-A arquitetura proposta para produção no Google Cloud é:
+A arquitetura de serving no Google Cloud utiliza:
 
 ```text
 Cliente
@@ -102,7 +108,7 @@ Container FastAPI
 Modelo TF-IDF + Logistic Regression
 ```
 
-Os principais serviços planejados são:
+Os principais serviços utilizados/planejados são:
 
 ```text
 Google Cloud
@@ -120,13 +126,13 @@ Google Cloud
          Orquestração Airflow
 ```
 
-O **Artifact Registry** armazenará a imagem Docker, o **Cloud Run** executará a API e o **Cloud Composer** será avaliado para hospedar a orquestração do Airflow. Dados e modelos versionados pelo DVC utilizam um remote no Cloud Storage.
+O **Artifact Registry** armazena a imagem Docker, o **Cloud Run** executa a API e o **Cloud Composer** é avaliado para hospedar a orquestração do Airflow. Dados e modelos versionados pelo DVC utilizam um remote no Cloud Storage.
 
 ### Treinamento — Batch
 
 O treinamento e o retreinamento não fazem parte do caminho de inferência.
 
-Essas tarefas são executadas de forma **batch**, podendo posteriormente ser orquestradas pelo Airflow na Etapa 2.
+Essas tarefas são executadas de forma **batch**, podendo posteriormente ser orquestradas pelo Airflow.
 
 ```text
 Dados
@@ -155,7 +161,7 @@ Essa separação evita que processos pesados de treinamento afetem a disponibili
 
 - **Python 3.11** — o projeto aceita `>=3.11,<3.12`.
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** `>=0.12.6,<0.13` — gerenciamento do ambiente e das dependências através do `uv.lock`.
-- **Docker Desktop** — necessário para executar a API em container.
+- **Docker Desktop** — necessário para executar os containers locais.
 
 ### Instalação do uv
 
@@ -220,6 +226,7 @@ Para o serving, são necessárias apenas as dependências relacionadas à API e 
 - scikit-learn
 - joblib
 - numpy
+- prometheus-client
 
 `torch` e `transformers` são utilizados no pipeline offline e não são necessários para a execução da API.
 
@@ -235,7 +242,6 @@ A Etapa 1 tem como objetivo criar a API de inferência, containerizar o serviço
 
 ```bash
 git clone https://github.com/fabii2607/medical-triage-mlops.git
-
 cd medical-triage-mlops
 ```
 
@@ -318,7 +324,7 @@ http://127.0.0.1:8000/docs
 
 ## API
 
-A API possui dois endpoints principais.
+A API possui dois endpoints principais e um endpoint técnico de observabilidade.
 
 ### `GET /health`
 
@@ -345,7 +351,7 @@ Caso o modelo não tenha sido carregado corretamente, a API retorna:
 503 Service Unavailable
 ```
 
-Esse endpoint também pode ser utilizado posteriormente como health check/probe do container.
+Esse endpoint também pode ser utilizado como health check/probe do container.
 
 ---
 
@@ -378,6 +384,26 @@ Resposta:
 A API utiliza `model.classes_` para determinar a correspondência entre as probabilidades e as classes, evitando depender de uma ordem de classes definida manualmente.
 
 O campo `model_version` permite rastrear qual versão do modelo realizou a predição.
+
+### `GET /metrics`
+
+Endpoint técnico utilizado pelo Prometheus para coletar métricas da API.
+
+Exemplo:
+
+```text
+/metrics
+```
+
+Principais métricas:
+
+```text
+medical_triage_requests_total
+medical_triage_request_duration_seconds
+medical_triage_predictions_total
+```
+
+---
 
 ### Validação
 
@@ -415,9 +441,7 @@ texto = [
 ]
 
 model.predict(texto)
-
 model.predict_proba(texto)
-
 model.classes_
 ```
 
@@ -503,7 +527,7 @@ As dependências são instaladas a partir do `pyproject.toml` e do `uv.lock`, se
 
 O processo da API executa como o usuário não privilegiado `app` (UID/GID 10001).
 
-O modelo `logreg_tfidf_v2.joblib` é incluído na imagem para que o container seja autocontido.
+O modelo é incluído na imagem para que o container seja autocontido.
 
 ### Build da imagem
 
@@ -535,6 +559,12 @@ Health check:
 
 ```text
 http://127.0.0.1:8000/health
+```
+
+Métricas:
+
+```text
+http://127.0.0.1:8000/metrics
 ```
 
 ### Testando o container
@@ -600,7 +630,7 @@ A implementação foi separada para permitir futuras alterações no backend de 
 
 ```text
 api/
-├── main.py       # Aplicação FastAPI e endpoints
+├── main.py       # Aplicação FastAPI, endpoints e métricas
 ├── model.py      # Carregamento e inferência do modelo
 └── schemas.py    # Schemas Pydantic
 ```
@@ -611,13 +641,339 @@ Essa separação também facilita a futura substituição do backend `scikit-lea
 
 ---
 
+# Etapa 3 — Monitoramento e Observabilidade ✅
+
+A API foi instrumentada com `prometheus-client` para exposição de métricas de observabilidade.
+
+## Métricas implementadas
+
+### Contagem de requisições
+
+```text
+medical_triage_requests_total
+```
+
+Registra a quantidade de requisições HTTP recebidas pela API.
+
+Labels:
+
+```text
+method
+endpoint
+status_code
+```
+
+### Latência das requisições
+
+```text
+medical_triage_request_duration_seconds
+```
+
+Histograma utilizado para registrar o tempo de processamento das requisições HTTP.
+
+Labels:
+
+```text
+method
+endpoint
+```
+
+### Predições por nível de triagem
+
+```text
+medical_triage_predictions_total
+```
+
+Conta as classificações produzidas pelo modelo por nível de triagem.
+
+Label:
+
+```text
+triage_level
+```
+
+Valores esperados:
+
+```text
+normal
+atenção
+urgente
+```
+
+## Endpoint de métricas
+
+A API expõe as métricas através de:
+
+```text
+GET /metrics
+```
+
+No ambiente publicado:
+
+```text
+https://medical-triage-api-105159782870.southamerica-east1.run.app/metrics
+```
+
+---
+
+## Stack de observabilidade
+
+A stack utiliza:
+
+- FastAPI
+- Cloud Run
+- Prometheus
+- Grafana
+- Docker Compose
+
+Fluxo de observabilidade:
+
+```text
+POST /predict
+      |
+      v
+Google Cloud Run
+      |
+      v
+FastAPI
+      |
+      v
+/metrics
+      |
+      v
+Prometheus
+      |
+      v
+Grafana
+```
+
+O Prometheus executa localmente no Docker Compose e coleta as métricas da API publicada no Google Cloud Run.
+
+---
+
+## Docker Compose
+
+A stack de observabilidade pode ser iniciada com:
+
+```bash
+docker compose up --build
+```
+
+Serviços locais:
+
+```text
+API:        http://localhost:8000
+Prometheus: http://localhost:9090
+Grafana:    http://localhost:3000
+```
+
+O arquivo de configuração do Prometheus está localizado em:
+
+```text
+monitoring/prometheus/prometheus.yml
+```
+
+---
+
+## Prometheus
+
+O Prometheus está configurado para realizar scraping do endpoint `/metrics` da API publicada no Cloud Run.
+
+Target:
+
+```text
+medical-triage-api-gcp
+```
+
+Endpoint:
+
+```text
+https://medical-triage-api-105159782870.southamerica-east1.run.app/metrics
+```
+
+Intervalo de coleta:
+
+```text
+5 segundos
+```
+
+### Evidência do target
+
+![Prometheus Target](docs/images/prometheus-targets.png)
+
+O estado `UP` confirma que o Prometheus consegue acessar e coletar corretamente as métricas da API publicada no Google Cloud Run.
+
+---
+
+## Grafana
+
+O datasource Prometheus é configurado no Grafana utilizando:
+
+```text
+http://prometheus:9090
+```
+
+Foi criado o dashboard:
+
+```text
+Medical Triage API Monitoring
+```
+
+O dashboard possui seis painéis:
+
+1. **Total de Requisições**
+2. **Requisições por Endpoint**
+3. **Latência Média da API**
+4. **Taxa de Requisições por Endpoint**
+5. **Distribuição das Predições**
+6. **Erros HTTP por Status**
+
+### Dashboard
+
+![Dashboard Grafana](docs/images/grafana-dashboard.png)
+
+O dashboard permite observar tanto o comportamento técnico da API quanto a distribuição das classificações produzidas pelo modelo.
+
+---
+
+## Consultas PromQL
+
+### Total de requisições
+
+```promql
+sum(medical_triage_requests_total)
+```
+
+### Requisições por endpoint
+
+```promql
+sum by (endpoint) (
+  medical_triage_requests_total{endpoint!="/favicon.ico"}
+)
+```
+
+### Latência média
+
+```promql
+(
+  sum(medical_triage_request_duration_seconds_sum)
+  /
+  sum(medical_triage_request_duration_seconds_count)
+) * 1000
+```
+
+### Taxa de requisições por endpoint
+
+```promql
+sum by (endpoint) (
+  rate(
+    medical_triage_requests_total{
+      endpoint!="/favicon.ico"
+    }[$__rate_interval]
+  )
+)
+```
+
+### Distribuição das predições
+
+```promql
+sum by (triage_level) (
+  medical_triage_predictions_total
+)
+```
+
+### Erros HTTP
+
+```promql
+sum by (status_code) (
+  medical_triage_requests_total{
+    status_code!~"2.."
+  }
+)
+```
+
+---
+
+## Dashboard exportado
+
+O dashboard do Grafana foi exportado em JSON para permitir versionamento e reprodução:
+
+```text
+monitoring/grafana/dashboards/medical-triage-dashboard.json
+```
+
+---
+
+## Persistência do Grafana
+
+O Docker Compose utiliza um volume dedicado:
+
+```text
+grafana_data
+```
+
+Esse volume mantém dashboards, datasources e configurações do Grafana mesmo quando os containers são recriados.
+
+Para preservar os dados, utilize:
+
+```bash
+docker compose down
+```
+
+Evite:
+
+```bash
+docker compose down -v
+```
+
+quando quiser manter os dados do Grafana, pois a opção `-v` remove os volumes.
+
+---
+
+## Cloud Run e métricas
+
+A API instrumentada foi publicada no Google Cloud Run.
+
+O Prometheus coleta as métricas remotamente via HTTPS.
+
+Durante a validação da observabilidade, o Cloud Run foi configurado temporariamente com uma única instância:
+
+```text
+min instances = 1
+max instances = 1
+```
+
+Isso permite uma demonstração consistente das métricas mantidas em memória pelo `prometheus-client`.
+
+> Em uma arquitetura de produção com múltiplas instâncias autoescaláveis, métricas exclusivamente em memória por processo exigem uma estratégia de observabilidade apropriada para agregação entre instâncias.
+
+---
+
+## Status da Etapa 3
+
+- [x] Instrumentação com `prometheus-client`
+- [x] Métrica de contagem de requisições
+- [x] Métrica de latência
+- [x] Métrica de predições por classe
+- [x] Endpoint `/metrics`
+- [x] `docker-compose.yml`
+- [x] Prometheus
+- [x] Grafana
+- [x] Dashboard de observabilidade
+- [x] 6 painéis configurados
+- [x] Dashboard exportado em JSON
+- [x] Prometheus conectado à API no Cloud Run
+- [x] Evidências do Grafana e Prometheus
+
+---
+
 # Estrutura do projeto
 
 ```text
 medical-triage-mlops/
 
 ├── api/
-│   ├── main.py              # API FastAPI
+│   ├── main.py              # API FastAPI e métricas Prometheus
 │   ├── model.py             # Carregamento e inferência
 │   └── schemas.py           # Schemas Pydantic
 │
@@ -639,13 +995,22 @@ medical-triage-mlops/
 │
 ├── docs/
 │   ├── dependency-management.md
+│   ├── images/
+│   │   ├── grafana-dashboard.png
+│   │   └── prometheus-targets.png
 │   └── results/             # Métricas de referência
+│
+├── monitoring/
+│   ├── prometheus/
+│   │   └── prometheus.yml
+│   └── grafana/
+│       └── dashboards/
+│           └── medical-triage-dashboard.json
 │
 ├── tests/                   # Testes automatizados
 │
-├── monitoring/              # (Etapa 3) Prometheus + Grafana
-│
 ├── Dockerfile               # Container da API
+├── docker-compose.yml       # API + Prometheus + Grafana
 ├── pyproject.toml           # Dependências e configuração
 └── uv.lock                  # Dependências fixadas
 ```
@@ -660,13 +1025,13 @@ medical-triage-mlops/
 | Modelo de produção | scikit-learn — TF-IDF + Logistic Regression |
 | Serialização | joblib |
 | API | FastAPI + Uvicorn + Pydantic |
-| Containerização | Docker |
+| Containerização | Docker + Docker Compose |
 | Orquestração | Airflow |
 | Monitoramento | prometheus-client + Prometheus + Grafana |
+| Cloud | Google Cloud Run + Cloud Storage + Artifact Registry |
 | Otimização | ONNX Runtime |
 | Qualidade | Ruff + pytest + type hints |
 | Ambiente | uv + `uv.lock` |
-| Deploy em nuvem | GCP — Artifact Registry + Cloud Run |
 
 ---
 
@@ -677,6 +1042,8 @@ medical-triage-mlops/
 | [Gerenciamento de dependências](docs/dependency-management.md) | Ambientes, extras, grupos, Docker e CI |
 | [Métricas de validação](docs/results/validation_metrics.json) | Métricas usadas pelo quality gate |
 | [Métricas de teste](docs/results/test_metrics.json) | Avaliação final do modelo aprovado |
+| `monitoring/prometheus/prometheus.yml` | Configuração do Prometheus |
+| `monitoring/grafana/dashboards/medical-triage-dashboard.json` | Dashboard Grafana exportado |
 
 ---
 
@@ -746,27 +1113,20 @@ P95: 6.37 ms
 
 ---
 
-## Etapa 3 — Monitoramento e Observabilidade
+## Etapa 3 — Monitoramento e Observabilidade ✅
 
-- [ ] Instrumentação completa com `prometheus-client`
-- [ ] Métrica de contagem de requisições
-- [ ] Métrica de latência
-- [ ] Métrica de predições por classe
-- [ ] `docker-compose.yml`
-- [ ] Prometheus
-- [ ] Grafana
-- [ ] Dashboard com pelo menos 3 painéis
-- [ ] Guard-rail para a classe `urgente`
-
-As métricas planejadas são:
-
-```text
-triage_requests_total{endpoint,http_status}
-
-triage_request_latency_seconds{endpoint}
-
-triage_predictions_total{triage_level}
-```
+- [x] Instrumentação completa com `prometheus-client`
+- [x] Métrica de contagem de requisições
+- [x] Métrica de latência
+- [x] Métrica de predições por classe
+- [x] Endpoint `/metrics`
+- [x] `docker-compose.yml`
+- [x] Prometheus
+- [x] Grafana
+- [x] Dashboard com 6 painéis
+- [x] Dashboard exportado em JSON
+- [x] Monitoramento da API publicada no Cloud Run
+- [x] Evidências de observabilidade adicionadas ao repositório
 
 ---
 
@@ -792,12 +1152,13 @@ triage_predictions_total{triage_level}
 | Dockerfile | Etapa 1 | ✅ |
 | Benchmark de latência | Etapa 1 | ✅ |
 | Decisão arquitetural | Etapa 1 | ✅ |
-| GitHub Actions | Etapa 2 | ⏳ |
+| GitHub Actions | Etapa 2 | ✅ |
 | DAG Airflow | Etapa 2 | ⏳ |
-| Prometheus | Etapa 3 | ⏳ |
-| Grafana | Etapa 3 | ⏳ |
-| Docker Compose | Etapa 3 | ⏳ |
-| Dashboard com 3 painéis | Etapa 3 | ⏳ |
+| Prometheus | Etapa 3 | ✅ |
+| Grafana | Etapa 3 | ✅ |
+| Docker Compose | Etapa 3 | ✅ |
+| Dashboard com 3+ painéis | Etapa 3 | ✅ |
+| Monitoramento da API no Cloud Run | Etapa 3 | ✅ |
 | Otimização com ONNX/quantização/pruning | Etapa 4 | ⏳ |
 | Comparação de latência | Etapa 4 | ⏳ |
 | Vídeo STAR | Etapa 4 | ⏳ |
@@ -806,16 +1167,19 @@ triage_predictions_total{triage_level}
 
 # Próximas etapas
 
-Após a conclusão da Etapa 1, o próximo foco do projeto é a **Etapa 2 — CI/CD e Pipeline Automatizado**.
+A Etapa 3 adicionou a stack de observabilidade com **Prometheus + Grafana**, incluindo métricas técnicas da API e distribuição das classificações produzidas pelo modelo.
 
-O objetivo será automatizar:
+O próximo foco é a **Etapa 4 — Otimização de Latência e Entrega**.
 
-1. Verificação de qualidade do código com Ruff;
-2. Execução dos testes com pytest;
-3. Build da imagem Docker;
-4. Processo de treinamento através de uma DAG Airflow.
+Os principais objetivos serão:
 
-Posteriormente, a Etapa 3 adicionará a stack de observabilidade com **Prometheus + Grafana**, e a Etapa 4 substituirá o backend de inferência por uma versão otimizada utilizando **ONNX Runtime**, permitindo comparar diretamente as latências dos dois modelos.
+1. Exportar o modelo para ONNX;
+2. Executar inferência com ONNX Runtime;
+3. Medir a latência do modelo atual;
+4. Medir a latência da versão otimizada;
+5. Comparar os resultados;
+6. Atualizar a arquitetura;
+7. Consolidar a entrega final e o vídeo STAR.
 
 ---
 
