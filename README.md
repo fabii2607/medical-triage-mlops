@@ -28,8 +28,13 @@ Avaliação no split de teste (1.685 amostras, 203 `urgente`). O baseline v1 foi
 | Modelo | Accuracy | Balanced Acc | Macro F1 | Recall `urgente` | Tamanho | Latência média |
 |---|---:|---:|---:|---:|---:|---:|
 | MLP v1 (720 amostras) | 0,565 | 0,442 | 0,406 | 0,000 | 7,5 MB | 4,3 ms |
-| MLP v2 (corpus completo) | **0,776** | 0,731 | **0,748** | 0,591 | 7,5 MB | 0,59 ms |
-| **LogReg balanced v2** ✅ | 0,767 | **0,777** | **0,748** | **0,808** | **0,3 MB** | **0,46 ms** |
+| MLP v2 (corpus completo) | **0,776** | 0,731 | 0,748 | 0,591 | 7,5 MB | 0,59 ms |
+| **LogReg balanced** ✅ | 0,768 | **0,778** | **0,750** | **0,813** | **0,3 MB** | **0,38 ms** |
+
+> Números do LogReg conforme o pipeline DVC atual
+> ([docs/results/test_metrics.json](docs/results/test_metrics.json)); o
+> histórico da seleção de modelos (MLP v1/v2) está em
+> [docs/results/triage_metrics_v2.json](docs/results/triage_metrics_v2.json).
 
 **Modelo escolhido para produção: `logreg_tfidf_v2`**
 
@@ -508,6 +513,42 @@ O valor de aproximadamente **0,46 ms** apresentado nas métricas do modelo corre
 O benchmark da API mede o tempo de resposta completo, incluindo a comunicação HTTP, validação e processamento da requisição.
 
 Por isso, os valores não devem ser comparados diretamente como se fossem a mesma medição.
+
+---
+
+# Otimização de latência — ONNX Runtime
+
+O pipeline completo (TF-IDF + LogisticRegression) é exportado para um único
+grafo ONNX — a inferência otimizada precisa apenas de `onnxruntime`, sem
+scikit-learn no runtime:
+
+```bash
+uv run python -m src.export_onnx                    # gera models/logreg_tfidf.onnx
+uv run python -m src.experiments.benchmark_onnx     # comparativo sklearn vs ONNX
+```
+
+Comparativo medido no conjunto de teste (1.685 textos; latência com predição
+unitária em 200 amostras, CPU):
+
+| | sklearn (joblib) | ONNX Runtime |
+|---|---:|---:|
+| Latência média | 0,614 ms | **0,083 ms** |
+| Latência P95 | 1,049 ms | **0,141 ms** |
+| Tamanho do artefato | 310 KB | **208 KB** |
+
+**Speedup de ~7,4x na latência média.** Resultados completos em
+[docs/results/onnx_benchmark.json](docs/results/onnx_benchmark.json).
+
+### Concordância entre os backends
+
+As predições coincidem em **98,1%** do conjunto de teste (32 divergências em
+1.685). A análise das divergências confirma que todas ocorrem em casos
+limítrofes: a margem média entre as duas classes mais prováveis do sklearn
+nesses casos é de apenas **0,019** (máxima 0,078), e o maior delta de
+probabilidade entre os backends é **0,07** — diferenças numéricas esperadas
+do conversor de `TfidfVectorizer` (tokenização/float32), sem impacto em
+predições de alta confiança. A decisão de qual classe emitir nesses empates
+técnicos é estatisticamente indiferente.
 
 ---
 
@@ -1136,11 +1177,11 @@ P95: 6.37 ms
 
 ## Etapa 4 — Otimização de Latência e Entrega
 
-- [ ] Exportação do modelo para ONNX
-- [ ] Inferência utilizando ONNX Runtime
-- [ ] Benchmark do modelo original
-- [ ] Benchmark do modelo otimizado
-- [ ] Comparação de latência
+- [x] Exportação do modelo para ONNX (`src/export_onnx.py`)
+- [x] Inferência utilizando ONNX Runtime
+- [x] Benchmark do modelo original
+- [x] Benchmark do modelo otimizado
+- [x] Comparação de latência (7,4x — ver seção "Otimização de latência")
 - [ ] Atualização da arquitetura
 - [ ] Gravação do vídeo STAR
 - [ ] Consolidação da entrega final
@@ -1163,8 +1204,8 @@ P95: 6.37 ms
 | Docker Compose | Etapa 3 | ✅ |
 | Dashboard com 3+ painéis | Etapa 3 | ✅ |
 | Monitoramento da API no Cloud Run | Etapa 3 | ✅ |
-| Otimização com ONNX/quantização/pruning | Etapa 4 | ⏳ |
-| Comparação de latência | Etapa 4 | ⏳ |
+| Otimização com ONNX/quantização/pruning | Etapa 4 | ✅ |
+| Comparação de latência | Etapa 4 | ✅ |
 | Vídeo STAR | Etapa 4 | ⏳ |
 
 ---
