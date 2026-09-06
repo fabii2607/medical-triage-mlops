@@ -213,8 +213,12 @@ para evitar que um `uv sync` reverta a instalação para a versão CPU.
 O modelo utilizado pela API é:
 
 ```text
-models/logreg_tfidf_v2.joblib
+models/logreg_tfidf.joblib
 ```
+
+Esse é o artefato gerado pela stage `train` do DVC (`dvc repro` ou `dvc pull`);
+`logreg_tfidf_v2` é o nome da **versão** reportada pela API (`model_version`),
+não o nome do arquivo.
 
 O artefato possui aproximadamente **0,3 MB**.
 
