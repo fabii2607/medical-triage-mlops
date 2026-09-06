@@ -1,0 +1,4 @@
+*
+!requirements-airflow.txt
+!pyproject.toml
+!uv.lock

@@ -1,0 +1,23 @@
+# Airflow standalone para a orquestração local do pipeline de treino.
+# Separado do docker-compose.yml (API + Prometheus + Grafana) de propósito:
+# monitoramento e orquestração sobem de forma independente.
+#
+#   docker compose -f docker-compose.airflow.yml up --build
+#   UI: http://localhost:8080 (autenticação liberada — uso local apenas)
+#   Pré-requisito: dados presentes em data/processed (dvc pull no host).
+services:
+  airflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    command: airflow standalone
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/project/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      # SimpleAuthManager sem login — exclusivamente para demo local.
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+    volumes:
+      - ./:/opt/airflow/project
+    restart: unless-stopped
