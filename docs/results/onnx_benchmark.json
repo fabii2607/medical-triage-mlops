@@ -1,0 +1,31 @@
+{
+  "test_set_size": 1685,
+  "prediction_agreement": 0.981009,
+  "divergence_analysis": {
+    "n_disagreements": 32,
+    "sklearn_margin_mean": 0.0191,
+    "sklearn_margin_max": 0.0782,
+    "max_probability_delta": 0.07
+  },
+  "sklearn": {
+    "artifact": "logreg_tfidf.joblib",
+    "size_kb": 310.0,
+    "latency": {
+      "mean_ms": 0.614,
+      "p95_ms": 1.049,
+      "max_ms": 1.385,
+      "n_samples": 200
+    }
+  },
+  "onnx": {
+    "artifact": "logreg_tfidf.onnx",
+    "size_kb": 207.9,
+    "latency": {
+      "mean_ms": 0.083,
+      "p95_ms": 0.141,
+      "max_ms": 0.547,
+      "n_samples": 200
+    }
+  },
+  "speedup_mean": 7.4
+}
