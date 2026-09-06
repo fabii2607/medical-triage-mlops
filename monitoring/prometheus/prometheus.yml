@@ -2,6 +2,13 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
+  # API local do docker-compose — permite demonstrar a stack offline.
+  - job_name: "medical-triage-api-local"
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "api:8000"
+
   - job_name: "medical-triage-api-gcp"
     scheme: https
     metrics_path: /metrics

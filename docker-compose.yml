@@ -6,6 +6,13 @@ services:
     container_name: medical-triage-api
     ports:
       - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   prometheus:
     image: prom/prometheus:latest
@@ -24,6 +31,8 @@ services:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards/medical-triage-dashboard-provisioned.json:/etc/grafana/dashboards/medical-triage-dashboard.json:ro
     depends_on:
       - prometheus
 
