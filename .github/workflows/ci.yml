@@ -53,3 +53,21 @@ jobs:
 
       - name: Run tests
         run: uv run --no-sync pytest
+
+  docker:
+    name: Docker build (API)
+    runs-on: ubuntu-latest
+    needs: quality
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Sem credenciais GCP o CI não tem o artefato do DVC; este job valida a
+      # imagem de serving (dependências + código). O modelo real entra via
+      # `dvc pull` no fluxo de deploy.
+      - name: Build serving image
+        run: docker build -t medical-triage-api:ci .
