@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      AIRFLOW_HOME: ${{ runner.temp }}/airflow
+      AIRFLOW_HOME: /tmp/airflow
       UV_PROJECT_ENVIRONMENT: .venv-airflow
 
     steps:
