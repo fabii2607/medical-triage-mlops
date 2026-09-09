@@ -2490,6 +2490,7 @@ labeling = [
 airflow = [
     { name = "apache-airflow" },
     { name = "dvc", extra = ["gs"], marker = "extra == 'group-25-medical-triage-mlops-main-airflow'" },
+    { name = "pytest" },
 ]
 dev = [
     { name = "dvc", extra = ["gs"] },
@@ -2506,6 +2507,9 @@ dev = [
 ]
 mlops = [
     { name = "dvc", extra = ["gs"] },
+]
+test = [
+    { name = "pytest" },
 ]
 
 [package.metadata]
@@ -2531,6 +2535,7 @@ provides-extras = ["api", "labeling"]
 airflow = [
     { name = "apache-airflow", specifier = "==3.1.7" },
     { name = "dvc", extras = ["gs"], specifier = ">=3.67.1,<4" },
+    { name = "pytest", specifier = ">=9.1.1" },
 ]
 dev = [
     { name = "dvc", extras = ["gs"], specifier = ">=3.67.1,<4" },
@@ -2546,6 +2551,7 @@ dev = [
     { name = "skl2onnx", specifier = ">=1.20.0" },
 ]
 mlops = [{ name = "dvc", extras = ["gs"], specifier = ">=3.67.1,<4" }]
+test = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "methodtools"

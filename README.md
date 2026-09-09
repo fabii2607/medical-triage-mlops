@@ -303,13 +303,10 @@ Cada integrante cria sua própria `.venv`; a pasta não é enviada ao Git. Todos
 uv run --no-sync pytest
 ```
 
-Atualmente, o projeto possui **35 testes**, cobrindo API, treinamento, avaliação, quality gate, parâmetros, métricas, split e regras de triagem.
-
-Exemplo de resultado:
-
-```text
-35 passed
-```
+A suíte principal cobre API, treinamento, avaliação, quality gate, parâmetros,
+métricas, split e regras de triagem. Os testes estruturais da DAG ficam no
+mesmo diretório, mas são executados obrigatoriamente em um job isolado do CI
+que instala Airflow 3.1.7.
 
 ### 4. Executar a API localmente
 
@@ -1151,8 +1148,10 @@ P95: 6.37 ms
 - [x] Automação de testes
 - [x] Pipeline reproduzível com DVC
 - [x] Quality gate do modelo
-- [ ] Build automático da imagem Docker
-- [ ] DAG Airflow
+- [x] Build automático da imagem Docker da API
+- [x] DAG Airflow
+- [x] Teste estrutural da DAG em ambiente isolado
+- [x] Validação do Compose e build da imagem Airflow no CI
 - [ ] Pipeline de retreinamento
 - [ ] Orquestração do split → treino → avaliação → publicação
 
@@ -1198,7 +1197,7 @@ P95: 6.37 ms
 | Benchmark de latência | Etapa 1 | ✅ |
 | Decisão arquitetural | Etapa 1 | ✅ |
 | GitHub Actions | Etapa 2 | ✅ |
-| DAG Airflow | Etapa 2 | ⏳ |
+| DAG Airflow | Etapa 2 | ✅ |
 | Prometheus | Etapa 3 | ✅ |
 | Grafana | Etapa 3 | ✅ |
 | Docker Compose | Etapa 3 | ✅ |

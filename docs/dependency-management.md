@@ -66,11 +66,15 @@ O modelo leve servido pela API não precisa do extra `labeling`.
 
 Grupos representam ferramentas e ambientes internos do repositório:
 
+- `test`: pytest compartilhado pelos ambientes que executam testes;
 - `mlops`: DVC e integração com GCS;
-- `dev`: testes, lint, notebooks e experimentos, incluindo `mlops`;
-- `airflow`: Airflow local, incluindo `mlops`.
+- `dev`: lint, notebooks e experimentos, incluindo `test` e `mlops`;
+- `airflow`: Airflow local, incluindo `test` e `mlops`.
 
-O grupo `dev` é instalado por padrão. O grupo `mlops` existe para compartilhar o DVC entre desenvolvimento e Airflow sem duplicar sua declaração.
+O grupo `dev` é instalado por padrão. Os grupos pequenos `test` e `mlops`
+evitam duplicar pytest e DVC nos ambientes que os consomem. Pytest não fica em
+`mlops` porque testes e versionamento de artefatos têm responsabilidades
+diferentes.
 
 ## Conflito entre API e Airflow
 
@@ -165,6 +169,25 @@ A API executa como o usuário não privilegiado `app`, UID e GID 10001. Código,
 
 O `.dockerignore` adota uma lista de permissão: todo o contexto é ignorado e somente Dockerfile, `pyproject.toml`, `uv.lock`, `api/` e `models/` são enviados ao builder.
 
+## Docker do Airflow
+
+O `Dockerfile.airflow` mantém o Python da imagem oficial responsável pelo
+Airflow. Separadamente, cria `/home/airflow/project-venv` com o núcleo do
+projeto e o grupo `mlops`:
+
+```bash
+uv sync \
+    --locked \
+    --no-default-groups \
+    --group mlops \
+    --no-install-project \
+    --no-cache
+```
+
+Essa separação impede que o FastAPI da aplicação sobrescreva dependências
+internas do Airflow. O `pyproject.toml` e o `uv.lock` são a única fonte das
+dependências; não existe um `requirements-airflow.txt` paralelo para manter.
+
 ## Integração contínua
 
 O CI instala o ambiente necessário aos testes atuais:
@@ -177,7 +200,14 @@ O `--locked` valida que o lockfile está atualizado e instala as dependências. 
 
 O extra `labeling` não é instalado no job atual porque os testes não importam Torch ou Transformers. Quando existirem testes específicos do BioBERT, eles devem ficar em um job separado para não aumentar o tempo de todos os testes.
 
-O ambiente Airflow também receberá um job separado quando as DAGs e seus testes forem adicionados.
+O Airflow possui um job separado no CI. Ele cria `.venv-airflow` apenas no
+runner, confirma a instalação do Airflow e executa `tests/test_dag.py`. No
+ambiente principal, esses testes são ignorados porque Airflow não faz parte da
+API nem do desenvolvimento comum.
+
+O mesmo job valida a configuração de `docker-compose.airflow.yml` e constrói
+`Dockerfile.airflow`. Ele não acessa o GCS, não executa retreinamento e não
+recebe credenciais.
 
 ## Como adicionar uma dependência
 
@@ -188,7 +218,8 @@ Antes de adicionar uma biblioteca, identifique onde ela é executada:
 | Treinamento leve, avaliação e inferência | `[project].dependencies` |
 | API em produção | extra `api` |
 | BioBERT e pseudo-labeling | extra `labeling` |
-| Testes, lint e notebooks | grupo `dev` |
+| Pytest compartilhado | grupo `test` |
+| Lint, notebooks e experimentos | grupo `dev` |
 | Versionamento de dados e modelos | grupo `mlops` |
 | Orquestração local | grupo `airflow` |
 

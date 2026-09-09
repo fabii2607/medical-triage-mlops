@@ -17,25 +17,21 @@ USER airflow
 # confiar no diretório (dono difere por causa do bind mount).
 RUN git config --global --add safe.directory /opt/airflow/project
 
-# CLI do DVC no ambiente do Airflow, exportado do uv.lock. Pacotes de serving
-# (fastapi/uvicorn/starlette etc.) são filtrados para não sobrescrever as
-# versões internas do Airflow. Gerado por:
-#   uv export --no-dev --group mlops --no-emit-project --no-hashes \
-#     | grep -vE '^(fastapi|uvicorn|starlette|httptools|watchfiles|websockets|python-dotenv|prometheus-client|h11|httpcore2|httpx2)==' \
-#     > requirements-airflow.txt
-COPY requirements-airflow.txt /tmp/requirements-airflow.txt
-RUN pip install --no-cache-dir -r /tmp/requirements-airflow.txt
-
-# O pip traz um uv antigo como dependência transitiva e ~/.local/bin vem
-# antes de /bin no PATH; o binário oficial 0.12.6 precisa vencer.
-RUN ln -sf /bin/uv /home/airflow/.local/bin/uv
-
-# O .venv montado do host é do Windows e não serve no container. O uv é
-# redirecionado para um venv Linux pré-criado aqui a partir do uv.lock —
-# assim os stages (`uv run --no-sync python -m src...`) rodam sem alterações.
+# A venv Linux contém o núcleo do projeto e o grupo mlops (DVC + GCS), todos
+# resolvidos pelo uv.lock. Ela permanece separada do Python interno da imagem
+# do Airflow, evitando o conflito de FastAPI sem manter requirements duplicado.
 ENV UV_PROJECT_ENVIRONMENT=/home/airflow/project-venv
 COPY pyproject.toml uv.lock /tmp/project/
 RUN cd /tmp/project \
-    && uv sync --locked --no-default-groups --no-install-project --no-cache
+    && /bin/uv sync \
+        --locked \
+        --no-default-groups \
+        --group mlops \
+        --no-install-project \
+        --no-cache \
+    && ln -sf /bin/uv /home/airflow/project-venv/bin/uv
+
+# Os comandos da DAG encontram dvc e o uv oficial na venv reproduzida acima.
+ENV PATH="/home/airflow/project-venv/bin:${PATH}"
 
 ENV DVC_NO_ANALYTICS=1
