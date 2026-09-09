@@ -26,11 +26,15 @@ labeling = [
 ]
 
 [dependency-groups]
+test = [
+    "pytest>=9.1.1",
+]
 mlops = [
     "dvc[gs]>=3.67.1,<4",
 ]
 dev = [
     { include-group = "mlops" },
+    { include-group = "test" },
     "httpx>=0.28.1",
     "httpx2>=2.12,<3",
     "ipykernel>=7.3.0",
@@ -38,12 +42,12 @@ dev = [
     "matplotlib>=3.11.1",
     "onnx>=1.22.0",
     "onnxruntime>=1.28.0",
-    "pytest>=9.1.1",
     "ruff>=0.16.1",
     "skl2onnx>=1.20.0",
 ]
 airflow = [
     { include-group = "mlops" },
+    { include-group = "test" },
     "apache-airflow==3.1.7",
 ]
 
