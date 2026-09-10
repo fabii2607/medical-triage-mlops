@@ -89,6 +89,9 @@ jobs:
         run: uv run --no-sync pytest tests/test_dag.py
 
       - name: Validate Airflow Compose
+        env:
+          # O CI apenas valida o Compose; nenhuma credencial é montada ou usada.
+          GOOGLE_APPLICATION_CREDENTIALS_HOST: /tmp/adc-placeholder.json
         run: docker compose -f docker-compose.airflow.yml config --quiet
 
       - name: Build Airflow image

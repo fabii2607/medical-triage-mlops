@@ -209,6 +209,19 @@ O mesmo job valida a configuração de `docker-compose.airflow.yml` e constrói
 `Dockerfile.airflow`. Ele não acessa o GCS, não executa retreinamento e não
 recebe credenciais.
 
+## Credenciais e volumes do CT local
+
+O Airflow local acessa o remote DVC com o ADC criado por
+`gcloud auth application-default login`. O `.env` informa somente o caminho
+do arquivo no host; o Compose o monta como somente leitura e a imagem não
+recebe nenhuma credencial durante o build.
+
+O serviço principal continua executando como o usuário `airflow`. Um serviço
+`airflow-init`, de vida curta, usa root apenas para atribuir ao UID 50000 os
+volumes `airflow_state` e `airflow_dvc_cache`. O primeiro persiste banco e logs
+do Airflow; o segundo evita baixar novamente objetos já presentes no cache do
+DVC. Ambos são locais e independentes do bucket GCS.
+
 ## Como adicionar uma dependência
 
 Antes de adicionar uma biblioteca, identifique onde ela é executada:

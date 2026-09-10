@@ -127,11 +127,15 @@ Google Cloud
    +--> Cloud Storage
    |     Remote do DVC
    |
-   +--> Cloud Composer
-         Orquestração Airflow
+   +--> Airflow local
+         Orquestração do Continuous Training
 ```
 
-O **Artifact Registry** armazena a imagem Docker, o **Cloud Run** executa a API e o **Cloud Composer** é avaliado para hospedar a orquestração do Airflow. Dados e modelos versionados pelo DVC utilizam um remote no Cloud Storage.
+O **Artifact Registry** armazenará a imagem Docker e o **Cloud Run** executará
+a API. Para esta entrega acadêmica, o Continuous Training é orquestrado por
+Airflow local via Docker Compose, evitando o custo de uma infraestrutura
+permanente. Dados e modelos versionados pelo DVC utilizam um remote no Cloud
+Storage.
 
 ### Treinamento — Batch
 
@@ -661,7 +665,8 @@ uv run --no-sync pytest
 Resultado atual:
 
 ```text
-35 passed
+37 passed, 7 skipped no ambiente principal
+7 passed no ambiente isolado do Airflow
 ```
 
 ---
@@ -680,6 +685,69 @@ api/
 O modelo é carregado uma única vez durante o startup da aplicação através do `lifespan` do FastAPI.
 
 Essa separação também facilita a futura substituição do backend `scikit-learn/joblib` por **ONNX Runtime**, prevista na Etapa 4, sem necessidade de reescrever as rotas da API.
+
+---
+
+# Etapa 2 — CI e Continuous Training
+
+O `dvc.yaml` é a fonte única do pipeline de ML. O Airflow orquestra o acesso ao
+GCS e os stages do DVC nesta ordem:
+
+```text
+fetch_versioned_data
+  → split
+  → train
+  → evaluate_validation
+  → quality_gate
+  → evaluate_test
+  → publish_artifacts
+```
+
+O CT é executado localmente sob demanda. Para autorizar o DVC dentro do
+container, crie o ADC e o `.env` local:
+
+```bash
+gcloud auth application-default login
+gcloud auth application-default set-quota-project medical-triage-mlops
+cp .env.example .env
+```
+
+Edite `GOOGLE_APPLICATION_CREDENTIALS_HOST` no `.env` com o caminho absoluto
+do JSON gerado pelo `gcloud`. O arquivo é montado como somente leitura e não é
+incluído no Git nem na imagem.
+
+Suba a infraestrutura:
+
+```bash
+docker compose -f docker-compose.airflow.yml up --build -d
+```
+
+A interface estará em `http://localhost:8080`. Abra a DAG
+`medical_triage_training`, clique em **Trigger DAG** e escolha
+`force_retrain=true` para reproduzir todos os stages ou `false` para deixar o
+DVC executar somente o que foi invalidado.
+
+Para disparar pela CLI:
+
+```bash
+docker compose -f docker-compose.airflow.yml exec airflow \
+  airflow dags trigger --conf '{"force_retrain": true}' \
+  medical_triage_training
+```
+
+O quality gate utiliza apenas a validação. Se for reprovado, a DAG falha antes
+da avaliação de teste e do `dvc push`. Quando aprovado, dados, splits e modelo
+são enviados ao remote; `dvc.lock` e métricas devem ser revisados e promovidos
+por pull request.
+
+Para encerrar sem apagar o histórico local:
+
+```bash
+docker compose -f docker-compose.airflow.yml down
+```
+
+Detalhes de autenticação, volumes, tentativas, versionamento e evidências estão
+em [docs/handoff_cicd_airflow.md](docs/handoff_cicd_airflow.md).
 
 ---
 
@@ -1152,8 +1220,11 @@ P95: 6.37 ms
 - [x] DAG Airflow
 - [x] Teste estrutural da DAG em ambiente isolado
 - [x] Validação do Compose e build da imagem Airflow no CI
-- [ ] Pipeline de retreinamento
-- [ ] Orquestração do split → treino → avaliação → publicação
+- [x] Pipeline de retreinamento local sob demanda
+- [x] ADC montado no container sem credencial no Git/imagem
+- [x] `dvc pull` e `dvc push` orquestrados pelo Airflow
+- [x] Orquestração do split → treino → avaliação → publicação
+- [x] Execução forçada e execução idempotente validadas
 
 ---
 

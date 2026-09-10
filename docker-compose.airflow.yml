@@ -4,20 +4,66 @@
 #
 #   docker compose -f docker-compose.airflow.yml up --build
 #   UI: http://localhost:8080 (autenticação liberada — uso local apenas)
-#   Pré-requisito: dados presentes em data/processed (dvc pull no host).
+#   Pré-requisito: ADC local configurado no arquivo .env (veja .env.example).
+x-airflow-image: &airflow-image
+  image: medical-triage-airflow:local
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+
 services:
+  airflow-init:
+    <<: *airflow-image
+    # Executa uma única vez para preparar volumes criados como root pelo Docker.
+    # O serviço principal abaixo continua rodando como o usuário airflow.
+    user: "0:0"
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - chown -R 50000:0 /opt/airflow /dvc-cache
+    volumes:
+      - type: volume
+        source: airflow_state
+        target: /opt/airflow
+      - type: volume
+        source: airflow_dvc_cache
+        target: /dvc-cache
+    restart: "no"
+
   airflow:
-    build:
-      context: .
-      dockerfile: Dockerfile.airflow
+    <<: *airflow-image
     command: airflow standalone
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
+      AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/project/dags
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       # SimpleAuthManager sem login — exclusivamente para demo local.
       AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"
+      GOOGLE_APPLICATION_CREDENTIALS: /opt/airflow/gcp/application_default_credentials.json
+      # Workaround temporário para o discovery experimental de buckets do
+      # gcsfs 2026.8.0. O acesso continua sendo feito normalmente pelo GCS.
+      GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT: "false"
     volumes:
-      - ./:/opt/airflow/project
+      - type: volume
+        source: airflow_state
+        target: /opt/airflow
+      - type: bind
+        source: ./
+        target: /opt/airflow/project
+      - type: volume
+        source: airflow_dvc_cache
+        target: /opt/airflow/project/.dvc/cache
+      - type: bind
+        source: ${GOOGLE_APPLICATION_CREDENTIALS_HOST:?Copie .env.example para .env e informe o caminho absoluto do ADC}
+        target: /opt/airflow/gcp/application_default_credentials.json
+        read_only: true
     restart: unless-stopped
+
+volumes:
+  airflow_state:
+  airflow_dvc_cache:

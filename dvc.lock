@@ -82,7 +82,7 @@ stages:
     outs:
     - path: models/logreg_tfidf.joblib
       hash: md5
-      md5: aa2d57fafa1d83ad00fcd1502b9f4154
+      md5: d167adf467a611aad43783cc597f4b29
       size: 317412
   evaluate_validation:
     cmd: uv run --no-sync python -m src.evaluation.evaluate --split validation
@@ -93,7 +93,7 @@ stages:
       size: 2403639
     - path: models/logreg_tfidf.joblib
       hash: md5
-      md5: aa2d57fafa1d83ad00fcd1502b9f4154
+      md5: d167adf467a611aad43783cc597f4b29
       size: 317412
     - path: src/config.py
       hash: md5
@@ -121,14 +121,14 @@ stages:
     outs:
     - path: docs/results/validation_metrics.json
       hash: md5
-      md5: 5e09f65e653ae4a6655df4f7e2696d29
+      md5: 8ec7265148d40a95eab6bc45779ef3c1
       size: 1429
   quality_gate:
     cmd: uv run --no-sync python -m src.evaluation.quality_gate
     deps:
     - path: docs/results/validation_metrics.json
       hash: md5
-      md5: 5e09f65e653ae4a6655df4f7e2696d29
+      md5: 8ec7265148d40a95eab6bc45779ef3c1
       size: 1429
     - path: src/config.py
       hash: md5
@@ -169,7 +169,7 @@ stages:
       size: 530
     - path: models/logreg_tfidf.joblib
       hash: md5
-      md5: aa2d57fafa1d83ad00fcd1502b9f4154
+      md5: d167adf467a611aad43783cc597f4b29
       size: 317412
     - path: src/config.py
       hash: md5
@@ -197,5 +197,5 @@ stages:
     outs:
     - path: docs/results/test_metrics.json
       hash: md5
-      md5: 1f158118f8fcc3632e02c5f54aa177d9
+      md5: ee346effe04daa2cc81a0c255d488462
       size: 1410
