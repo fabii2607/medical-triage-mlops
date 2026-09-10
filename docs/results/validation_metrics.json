@@ -64,8 +64,8 @@
     "urgente"
   ],
   "latency": {
-    "latency_mean_ms": 0.385,
-    "latency_p95_ms": 0.481,
+    "latency_mean_ms": 0.455,
+    "latency_p95_ms": 0.612,
     "n_samples": 200
   }
 }
