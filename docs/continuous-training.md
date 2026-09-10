@@ -1,4 +1,9 @@
-# Handoff — CI e Continuous Training local
+# Continuous Training local com Airflow e DVC
+
+Este documento descreve o fluxo de treino e retreino executado localmente.
+A validação de código está documentada em
+[continuous-integration.md](continuous-integration.md), e a publicação da API
+em [continuous-deployment.md](continuous-deployment.md).
 
 ## Estado atual
 
@@ -23,20 +28,6 @@ fetch_versioned_data
 
 O Airflow controla ordem, concorrência, tentativas e logs. A lógica de ML
 continua em `src/` e no `dvc.yaml`; ela não foi duplicada na DAG.
-
-## Integração contínua
-
-O workflow `.github/workflows/ci.yml` executa em pull requests para `main`,
-pushes na `main` e por disparo manual. Ele possui três verificações:
-
-1. DVC DAG, Ruff, formatação e pytest no ambiente principal;
-2. instalação isolada do Airflow, testes estruturais da DAG, validação do
-   Compose e build de `Dockerfile.airflow`;
-3. build da imagem de serving da API.
-
-O CI não recebe credenciais GCP, não acessa o GCS e não retreina. Durante a
-validação do Compose ele informa somente um caminho fictício, pois o arquivo
-não é aberto por `docker compose config`.
 
 ## Autenticação local no GCS
 

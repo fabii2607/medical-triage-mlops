@@ -1,5 +1,9 @@
 # Continuous Deployment no Google Cloud
 
+Este documento descreve a publicação da API. As etapas anteriores estão em
+[continuous-integration.md](continuous-integration.md) e
+[continuous-training.md](continuous-training.md).
+
 ## Objetivo
 
 O workflow `.github/workflows/cd.yml` publica automaticamente na API do
@@ -166,8 +170,12 @@ Antes da publicação da branch foram validados:
 - 37 testes do ambiente principal e 7 testes do ambiente Airflow;
 - Ruff lint e format check.
 
-A autenticação WIF, o push da imagem e a promoção automatizada só podem ser
-validados dentro do GitHub Actions após o workflow existir na `main`.
+A primeira execução em nuvem foi concluída após o merge
+`1f8c1fdaa9fd35f2817d576ff3380e78e3165e8e` na `main`. O workflow autenticou
+por WIF, publicou a imagem com o SHA do commit e promoveu a revisão
+`medical-triage-api-00009-sam` para 100% do tráfego. O serviço passou a usar a
+service account de runtime dedicada e respondeu ao `/health` com o modelo
+carregado.
 
 ## Limites desta entrega
 

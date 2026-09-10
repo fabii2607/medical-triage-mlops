@@ -82,6 +82,35 @@ O fluxo possui duas partes principais:
 
 O modelo de produção é carregado uma única vez durante o startup da API e permanece em memória para atender às requisições.
 
+### Arquitetura MLOps final
+
+```mermaid
+flowchart LR
+    A["GitHub<br/>main"] --> B["GitHub Actions<br/>CI"]
+    B -->|"CI aprovado"| C["GitHub Actions<br/>CD"]
+
+    D["Airflow local<br/>Continuous Training"] --> E["Pipeline DVC<br/>split · train · evaluate · gate"]
+    E -->|"dvc push"| F[("GCS<br/>DVC remote")]
+    F -->|"dvc pull do modelo aprovado"| C
+
+    C --> G["Artifact Registry<br/>imagem pelo SHA do Git"]
+    G --> H["Cloud Run<br/>revisão candidata → produção"]
+    H --> I["/metrics"]
+    I --> J["Prometheus local"]
+    J --> K["Grafana"]
+
+    style B fill:#dbeafe,stroke:#2563eb
+    style D fill:#f3e8ff,stroke:#9333ea
+    style E fill:#dcfce7,stroke:#16a34a
+    style C fill:#fef9c3,stroke:#ca8a04
+    style H fill:#ffedd5,stroke:#f97316
+```
+
+O CI valida código e builds, mas não recebe credenciais GCP. O CT executa
+localmente sob demanda e publica dados/modelos no DVC. O CD usa uma identidade
+federada somente depois do CI verde para obter o modelo aprovado e publicar a
+API no Cloud Run.
+
 A classe `atenção` **não é aprendida diretamente pelo BioBERT**. Ela representa uma regra operacional baseada na zona de incerteza do classificador binário:
 
 `0,30 ≤ urgent_score < 0,70`
@@ -171,6 +200,7 @@ Essa separação evita que processos pesados de treinamento afetem a disponibili
 - **Python 3.11** — o projeto aceita `>=3.11,<3.12`.
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** `>=0.12.6,<0.13` — gerenciamento do ambiente e das dependências através do `uv.lock`.
 - **Docker Desktop** — necessário para executar os containers locais.
+- **Google Cloud CLI** — necessário para autenticar e obter os artefatos do DVC no GCS.
 
 ### Instalação do uv
 
@@ -276,6 +306,20 @@ uv sync --locked --extra api
 
 A `.venv` é utilizada para API, desenvolvimento, testes e notebooks. O Airflow possui uma virtualenv própria porque Airflow 3.1.7 e a API exigem versões incompatíveis do FastAPI:
 
+| Tipo | Nome | Finalidade |
+|---|---|---|
+| Extra | `api` | Serving FastAPI, Uvicorn e métricas Prometheus |
+| Extra | `labeling` | Pseudo-rotulagem com BioBERT, PyTorch e Transformers |
+| Grupo | `test` | Pytest compartilhado entre os ambientes |
+| Grupo | `mlops` | DVC e acesso ao remote GCS |
+| Grupo padrão | `dev` | Ruff, notebooks, experimentos, testes e MLOps |
+| Grupo isolado | `airflow` | Airflow, testes da DAG e MLOps |
+
+O grupo `dev` é instalado por padrão. Assim, o ambiente principal completo é
+criado com `--extra api`; `--extra labeling` só é necessário para executar o
+BioBERT. O grupo `airflow` utiliza `.venv-airflow` e não deve ser combinado com
+o extra `api`.
+
 ```bash
 UV_PROJECT_ENVIRONMENT=.venv-airflow \
 uv sync --locked --no-default-groups --group airflow
@@ -301,7 +345,22 @@ Depois de criar o ambiente principal com o extra `labeling`:
 
 Cada integrante cria sua própria `.venv`; a pasta não é enviada ao Git. Todos os notebooks podem inicialmente utilizar esse mesmo kernel. Mais detalhes estão em [docs/dependency-management.md](docs/dependency-management.md).
 
-### 3. Verificar os testes
+### 3. Obter o modelo versionado
+
+Em um clone novo, autentique o acesso ao GCS e materialize o artefato apontado
+pelo commit atual:
+
+```bash
+gcloud auth application-default login
+gcloud auth application-default set-quota-project medical-triage-mlops
+GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT=false \
+uv run --no-sync dvc pull models/logreg_tfidf.joblib
+```
+
+O login é local e não cria credenciais dentro do repositório. Integrantes que
+já possuem ADC válido precisam executar apenas o `dvc pull`.
+
+### 4. Verificar os testes
 
 ```bash
 uv run --no-sync pytest
@@ -312,7 +371,7 @@ métricas, split e regras de triagem. Os testes estruturais da DAG ficam no
 mesmo diretório, mas são executados obrigatoriamente em um job isolado do CI
 que instala Airflow 3.1.7.
 
-### 4. Executar a API localmente
+### 5. Executar a API localmente
 
 ```bash
 uv run --no-sync uvicorn api.main:app --reload
@@ -443,7 +502,7 @@ O modelo é um Pipeline completo do scikit-learn:
 import joblib
 
 model = joblib.load(
-    "models/logreg_tfidf_v2.joblib"
+    "models/logreg_tfidf.joblib"
 )
 
 texto = [
@@ -684,7 +743,9 @@ api/
 
 O modelo é carregado uma única vez durante o startup da aplicação através do `lifespan` do FastAPI.
 
-Essa separação também facilita a futura substituição do backend `scikit-learn/joblib` por **ONNX Runtime**, prevista na Etapa 4, sem necessidade de reescrever as rotas da API.
+A exportação para ONNX Runtime e seu benchmark já foram implementados na
+Etapa 4. A API publicada continua usando `scikit-learn/joblib`; a separação do
+backend permite adotar o ONNX no serving futuramente sem reescrever as rotas.
 
 ---
 
@@ -747,7 +808,7 @@ docker compose -f docker-compose.airflow.yml down
 ```
 
 Detalhes de autenticação, volumes, tentativas, versionamento e evidências estão
-em [docs/handoff_cicd_airflow.md](docs/handoff_cicd_airflow.md).
+em [docs/continuous-training.md](docs/continuous-training.md).
 
 ## Continuous Deployment
 
@@ -767,6 +828,15 @@ repositório, e as identidades de deploy e runtime são separadas.
 
 O fluxo, os papéis IAM, os recursos GCP e a operação estão documentados em
 [docs/continuous-deployment.md](docs/continuous-deployment.md).
+
+Primeira execução validada após o merge do CD na `main`:
+
+```text
+commit:  1f8c1fdaa9fd35f2817d576ff3380e78e3165e8e
+revisão: medical-triage-api-00009-sam
+tráfego: 100%
+health:  modelo carregado
+```
 
 ---
 
@@ -1065,7 +1135,8 @@ A API instrumentada foi publicada no Google Cloud Run.
 
 O Prometheus coleta as métricas remotamente via HTTPS.
 
-Durante a validação da observabilidade, o Cloud Run foi configurado temporariamente com uma única instância:
+Durante a coleta das evidências de observabilidade, o Cloud Run foi
+configurado temporariamente com uma única instância:
 
 ```text
 min instances = 1
@@ -1073,6 +1144,9 @@ max instances = 1
 ```
 
 Isso permite uma demonstração consistente das métricas mantidas em memória pelo `prometheus-client`.
+
+O CD atual restaura a configuração de produção acadêmica para `min=0` e
+`max=20`, permitindo reduzir a zero quando o serviço não estiver em uso.
 
 > Em uma arquitetura de produção com múltiplas instâncias autoescaláveis, métricas exclusivamente em memória por processo exigem uma estratégia de observabilidade apropriada para agregação entre instâncias.
 
@@ -1123,6 +1197,9 @@ medical-triage-mlops/
 ├── models/                  # Modelos treinados
 │
 ├── docs/
+│   ├── continuous-integration.md
+│   ├── continuous-training.md
+│   ├── continuous-deployment.md
 │   ├── dependency-management.md
 │   ├── images/
 │   │   ├── grafana-dashboard.png
@@ -1138,7 +1215,13 @@ medical-triage-mlops/
 │
 ├── tests/                   # Testes automatizados
 │
+├── dags/                    # DAG do Continuous Training
+├── .github/workflows/       # Workflows de CI e CD
+├── dvc.yaml                 # Pipeline operacional de ML
+├── params.yaml              # Parâmetros e quality gate
+├── docker-compose.airflow.yml
 ├── Dockerfile               # Container da API
+├── Dockerfile.airflow       # Container da orquestração local
 ├── docker-compose.yml       # API + Prometheus + Grafana
 ├── pyproject.toml           # Dependências e configuração
 └── uv.lock                  # Dependências fixadas
@@ -1169,6 +1252,9 @@ medical-triage-mlops/
 | Documento | Descrição |
 |---|---|
 | [Gerenciamento de dependências](docs/dependency-management.md) | Ambientes, extras, grupos, Docker e CI |
+| [Continuous Integration](docs/continuous-integration.md) | Gatilhos, jobs, verificações e comportamento em falhas |
+| [Continuous Training](docs/continuous-training.md) | Airflow, DVC, quality gate e execução local |
+| [Continuous Deployment](docs/continuous-deployment.md) | WIF, Artifact Registry, Cloud Run, promoção e rollback |
 | [Métricas de validação](docs/results/validation_metrics.json) | Métricas usadas pelo quality gate |
 | [Métricas de teste](docs/results/test_metrics.json) | Avaliação final do modelo aprovado |
 | `monitoring/prometheus/prometheus.yml` | Configuração do Prometheus |
@@ -1276,7 +1362,7 @@ P95: 6.37 ms
 - [x] Benchmark do modelo original
 - [x] Benchmark do modelo otimizado
 - [x] Comparação de latência (7,4x — ver seção "Otimização de latência")
-- [ ] Atualização da arquitetura
+- [x] Atualização da arquitetura
 - [ ] Gravação do vídeo STAR
 - [ ] Consolidação da entrega final
 
@@ -1306,19 +1392,13 @@ P95: 6.37 ms
 
 # Próximas etapas
 
-A Etapa 3 adicionou a stack de observabilidade com **Prometheus + Grafana**, incluindo métricas técnicas da API e distribuição das classificações produzidas pelo modelo.
+O código, o modelo base, CI, CT, CD, observabilidade e benchmark ONNX estão
+concluídos. Para fechar a entrega acadêmica ainda é necessário:
 
-O próximo foco é a **Etapa 4 — Otimização de Latência e Entrega**.
-
-Os principais objetivos serão:
-
-1. Exportar o modelo para ONNX;
-2. Executar inferência com ONNX Runtime;
-3. Medir a latência do modelo atual;
-4. Medir a latência da versão otimizada;
-5. Comparar os resultados;
-6. Atualizar a arquitetura;
-7. Consolidar a entrega final e o vídeo STAR.
+1. versionar ou anexar à entrega o artefato `models/logreg_tfidf.onnx`;
+2. atualizar a apresentação com a arquitetura e as evidências finais;
+3. gravar e disponibilizar o link do vídeo STAR de até cinco minutos;
+4. executar uma última reprodução em clone limpo.
 
 ---
 
