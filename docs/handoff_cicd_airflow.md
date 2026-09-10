@@ -156,10 +156,14 @@ Uma segunda execução, sem `force_retrain`, terminou com sucesso em cerca de
 nove segundos. Os logs registraram `Data and pipelines are up to date`,
 confirmando a idempotência do DVC.
 
-## Limites e próxima etapa
+## Integração com o CD
 
-Este fluxo conclui o CT local acadêmico. O CD permanece separado: deverá obter
-o modelo aprovado pelo DVC, construir uma imagem imutável, publicá-la no
-Artifact Registry, implantar no Cloud Run e executar um smoke test em
-`/health`. Em CI/CD de nuvem, deve-se usar Workload Identity Federation ou uma
-service account vinculada ao serviço, nunca o ADC pessoal.
+Este fluxo conclui o CT local acadêmico. Depois da revisão de `dvc.lock`, das
+métricas e do modelo por pull request, o CD obtém o artefato aprovado na
+`main`, constrói uma imagem imutável, publica no Artifact Registry e promove
+uma revisão testada no Cloud Run.
+
+O CD usa Workload Identity Federation e uma service account de privilégio
+mínimo, nunca o ADC pessoal utilizado no Airflow local. A promoção e o rollback
+estão detalhados em
+[continuous-deployment.md](continuous-deployment.md).

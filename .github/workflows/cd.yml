@@ -1,0 +1,298 @@
+name: Continuous Deployment
+
+on:
+  workflow_run:
+    workflows:
+      - Continuous Integration
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: medical-triage-mlops
+  GCP_REGION: southamerica-east1
+  GAR_REPOSITORY: medical-triage
+  IMAGE_NAME: medical-triage-api
+  CLOUD_RUN_SERVICE: medical-triage-api
+  GCP_DEPLOY_SERVICE_ACCOUNT: github-cd@medical-triage-mlops.iam.gserviceaccount.com
+  CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT: cloud-run-runtime@medical-triage-mlops.iam.gserviceaccount.com
+  GCP_WORKLOAD_IDENTITY_PROVIDER: projects/105159782870/locations/global/workloadIdentityPools/github-actions/providers/medical-triage-main
+  GCSFS_EXPERIMENTAL_ZB_HNS_SUPPORT: "false"
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+jobs:
+  deploy:
+    name: Deploy approved model to Cloud Run
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.production.outputs.url }}
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout approved commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.6"
+          enable-cache: true
+
+      - name: Install artifact validation dependencies
+        run: >-
+          uv sync --locked --no-default-groups
+          --extra api --group mlops --group test
+
+      - id: auth
+        name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Pull approved model from DVC
+        run: uv run --no-sync dvc pull models/logreg_tfidf.joblib
+
+      - name: Validate model artifact contract
+        run: uv run --no-sync pytest tests/test_model_artifact.py
+
+      - id: release
+        name: Prepare immutable release identifiers
+        shell: bash
+        run: |
+          short_sha="${DEPLOY_SHA:0:12}"
+          image_uri="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/${IMAGE_NAME}:${DEPLOY_SHA}"
+          model_sha256="$(sha256sum models/logreg_tfidf.joblib | cut -d ' ' -f 1)"
+
+          {
+            echo "short_sha=${short_sha}"
+            echo "image_uri=${image_uri}"
+            echo "model_sha256=${model_sha256}"
+            echo "candidate_tag=sha-${short_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build serving image
+        run: docker build --tag "${{ steps.release.outputs.image_uri }}" .
+
+      - name: Smoke test image locally
+        shell: bash
+        run: |
+          container_id="$(docker run --detach --publish 8000:8000 "${{ steps.release.outputs.image_uri }}")"
+
+          cleanup() {
+            docker rm --force "${container_id}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          health_ok=false
+          for _ in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/health \
+              | jq --exit-status '.status == "ok" and .model_loaded == true' >/dev/null; then
+              health_ok=true
+              break
+            fi
+            sleep 2
+          done
+
+          if [[ "${health_ok}" != "true" ]]; then
+            docker logs "${container_id}"
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            --header "Content-Type: application/json" \
+            --data '{"text":"Patient reports severe chest pain and shortness of breath."}' \
+            http://127.0.0.1:8000/predict \
+            | jq --exit-status \
+              '.triage_level == "normal" or .triage_level == "atenção" or .triage_level == "urgente"' \
+              >/dev/null
+
+      - name: Authenticate Docker to Artifact Registry
+        run: gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      - name: Push immutable image
+        run: docker push "${{ steps.release.outputs.image_uri }}"
+
+      - id: previous
+        name: Record current production revision
+        shell: bash
+        run: |
+          previous_revision="$(
+            gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format=json \
+              | jq --raw-output \
+                '.status.traffic[] | select(.percent == 100) | .revisionName' \
+              | head -n 1
+          )"
+
+          if [[ -z "${previous_revision}" ]]; then
+            echo "Não foi possível identificar a revisão atual de produção."
+            exit 1
+          fi
+
+          echo "revision=${previous_revision}" >> "${GITHUB_OUTPUT}"
+
+      - id: candidate
+        name: Deploy candidate without production traffic
+        shell: bash
+        run: |
+          gcloud run deploy "${CLOUD_RUN_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --image="${{ steps.release.outputs.image_uri }}" \
+            --service-account="${CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT}" \
+            --port=8000 \
+            --cpu=1 \
+            --memory=512Mi \
+            --concurrency=80 \
+            --timeout=300 \
+            --min-instances=0 \
+            --max-instances=20 \
+            --cpu-boost \
+            --no-traffic \
+            --tag="${{ steps.release.outputs.candidate_tag }}" \
+            --quiet
+
+          gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --format=json > "${RUNNER_TEMP}/cloud-run-service.json"
+
+          candidate_revision="$(
+            jq --raw-output \
+              --arg tag "${{ steps.release.outputs.candidate_tag }}" \
+              '.status.traffic[] | select(.tag == $tag) | .revisionName' \
+              "${RUNNER_TEMP}/cloud-run-service.json"
+          )"
+          candidate_url="$(
+            jq --raw-output \
+              --arg tag "${{ steps.release.outputs.candidate_tag }}" \
+              '.status.traffic[] | select(.tag == $tag) | .url' \
+              "${RUNNER_TEMP}/cloud-run-service.json"
+          )"
+
+          if [[ -z "${candidate_revision}" || -z "${candidate_url}" ]]; then
+            echo "Não foi possível localizar a revisão candidata ou sua URL."
+            exit 1
+          fi
+
+          echo "revision=${candidate_revision}" >> "${GITHUB_OUTPUT}"
+          echo "url=${candidate_url}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke test candidate revision
+        shell: bash
+        run: |
+          curl --fail --silent --show-error \
+            "${{ steps.candidate.outputs.url }}/health" \
+            | jq --exit-status '.status == "ok" and .model_loaded == true' >/dev/null
+
+          curl --fail --silent --show-error \
+            --header "Content-Type: application/json" \
+            --data '{"text":"Patient reports severe chest pain and shortness of breath."}' \
+            "${{ steps.candidate.outputs.url }}/predict" \
+            | jq --exit-status \
+              '.triage_level == "normal" or .triage_level == "atenção" or .triage_level == "urgente"' \
+              >/dev/null
+
+      - id: promote
+        name: Promote candidate to production
+        run: |
+          gcloud run services update-traffic "${CLOUD_RUN_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --to-revisions="${{ steps.candidate.outputs.revision }}=100" \
+            --quiet
+
+      - id: production
+        name: Smoke test production URL
+        shell: bash
+        run: |
+          service_url="$(
+            gcloud run services describe "${CLOUD_RUN_SERVICE}" \
+              --project="${GCP_PROJECT_ID}" \
+              --region="${GCP_REGION}" \
+              --format='value(status.url)'
+          )"
+
+          echo "url=${service_url}" >> "${GITHUB_OUTPUT}"
+
+          curl --fail --silent --show-error "${service_url}/health" \
+            | jq --exit-status '.status == "ok" and .model_loaded == true' >/dev/null
+
+          curl --fail --silent --show-error \
+            --header "Content-Type: application/json" \
+            --data '{"text":"Patient reports severe chest pain and shortness of breath."}' \
+            "${service_url}/predict" \
+            | jq --exit-status \
+              '.triage_level == "normal" or .triage_level == "atenção" or .triage_level == "urgente"' \
+              >/dev/null
+
+      - name: Roll back production traffic on failure
+        if: >-
+          failure() &&
+          steps.promote.outcome == 'success' &&
+          steps.previous.outputs.revision != ''
+        run: |
+          gcloud run services update-traffic "${CLOUD_RUN_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --to-revisions="${{ steps.previous.outputs.revision }}=100" \
+            --quiet
+
+      - name: Remove temporary candidate tag
+        if: always() && steps.candidate.outputs.revision != ''
+        continue-on-error: true
+        run: |
+          gcloud run services update-traffic "${CLOUD_RUN_SERVICE}" \
+            --project="${GCP_PROJECT_ID}" \
+            --region="${GCP_REGION}" \
+            --remove-tags="${{ steps.release.outputs.candidate_tag }}" \
+            --quiet
+
+      - name: Publish deployment summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo "## Continuous Deployment"
+            echo
+            echo "- Commit: \`${DEPLOY_SHA}\`"
+            echo "- Model SHA-256: \`${{ steps.release.outputs.model_sha256 }}\`"
+            echo "- Image: \`${{ steps.release.outputs.image_uri }}\`"
+            echo "- Revision: \`${{ steps.candidate.outputs.revision }}\`"
+            echo "- Service: ${{ steps.production.outputs.url }}"
+          } >> "${GITHUB_STEP_SUMMARY}"

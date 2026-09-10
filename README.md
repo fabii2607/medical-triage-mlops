@@ -60,7 +60,7 @@ flowchart LR
 
     subgraph ONLINE["Online — Real-time"]
         F["FastAPI<br/>/predict"] --> G["Container Docker"]
-        G --> H["Google Cloud Run"]
+        G --> H["Artifact Registry<br/>+ Cloud Run"]
         H --> I["/metrics"]
         I --> J["Prometheus"]
         J --> K["Grafana"]
@@ -131,8 +131,8 @@ Google Cloud
          Orquestração do Continuous Training
 ```
 
-O **Artifact Registry** armazenará a imagem Docker e o **Cloud Run** executará
-a API. Para esta entrega acadêmica, o Continuous Training é orquestrado por
+O **Artifact Registry** armazena as imagens Docker imutáveis e o **Cloud Run**
+executa a API. Para esta entrega acadêmica, o Continuous Training é orquestrado por
 Airflow local via Docker Compose, evitando o custo de uma infraestrutura
 permanente. Dados e modelos versionados pelo DVC utilizam um remote no Cloud
 Storage.
@@ -688,7 +688,7 @@ Essa separação também facilita a futura substituição do backend `scikit-lea
 
 ---
 
-# Etapa 2 — CI e Continuous Training
+# Etapa 2 — CI, Continuous Training e Continuous Deployment
 
 O `dvc.yaml` é a fonte única do pipeline de ML. O Airflow orquestra o acesso ao
 GCS e os stages do DVC nesta ordem:
@@ -748,6 +748,25 @@ docker compose -f docker-compose.airflow.yml down
 
 Detalhes de autenticação, volumes, tentativas, versionamento e evidências estão
 em [docs/handoff_cicd_airflow.md](docs/handoff_cicd_airflow.md).
+
+## Continuous Deployment
+
+Após o CI aprovar um commit da `main`, o workflow
+`.github/workflows/cd.yml` baixa do DVC o modelo referenciado naquele commit,
+valida seu contrato e constrói a imagem da API. A imagem recebe como tag o SHA
+completo do Git e é publicada no Artifact Registry.
+
+O deploy cria primeiro uma revisão candidata no Cloud Run sem tráfego. O
+workflow testa `/health` e `/predict` nessa revisão e somente então promove
+100% do tráfego. Se a validação da URL de produção falhar, o tráfego retorna
+automaticamente para a revisão anterior.
+
+A autenticação entre GitHub e GCP usa Workload Identity Federation, sem chave
+JSON no repositório ou nos secrets. O provider aceita somente a `main` deste
+repositório, e as identidades de deploy e runtime são separadas.
+
+O fluxo, os papéis IAM, os recursos GCP e a operação estão documentados em
+[docs/continuous-deployment.md](docs/continuous-deployment.md).
 
 ---
 
@@ -1225,6 +1244,11 @@ P95: 6.37 ms
 - [x] `dvc pull` e `dvc push` orquestrados pelo Airflow
 - [x] Orquestração do split → treino → avaliação → publicação
 - [x] Execução forçada e execução idempotente validadas
+- [x] Autenticação GitHub → GCP sem chave por Workload Identity Federation
+- [x] Workflow para publicar imagem imutável no Artifact Registry pelo SHA do commit
+- [x] Deploy automatizado de revisão candidata sem tráfego no Cloud Run
+- [x] Smoke tests de `/health` e `/predict` antes e depois da promoção
+- [x] Promoção de tráfego e rollback automático em falha pós-deploy
 
 ---
 
