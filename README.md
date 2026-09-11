@@ -1235,7 +1235,7 @@ medical-triage-mlops/
 
 | Categoria | Stack |
 |---|---|
-| Pseudo-rotulagem | BioBERT via 🤗 Transformers + PyTorch |
+| Pseudo-rotulagem | BioBERT via Hugging Face Transformers + PyTorch |
 | Modelo de produção | scikit-learn — TF-IDF + Logistic Regression |
 | Serialização | joblib |
 | API | FastAPI + Uvicorn + Pydantic |
