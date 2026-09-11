@@ -275,30 +275,6 @@ Para o serving, são necessárias apenas as dependências relacionadas à API e 
 
 ---
 
-## Avaliando o projeto sem credenciais GCP
-
-Quem não faz parte do projeto no Google Cloud consegue reproduzir e verificar
-quase tudo a partir do clone. O remote do DVC tem leitura pública e a API está
-publicada; só os fluxos que **escrevem** no projeto exigem acesso.
-
-| O que fazer | Funciona sem credenciais? | Como |
-|---|---|---|
-| Baixar dados, splits e modelos | ✅ | `uv run --no-sync dvc pull` |
-| Rodar os testes | ✅ | `uv run --no-sync pytest` (37 passam; os 7 da DAG só rodam com o grupo `airflow`) |
-| Reproduzir o pipeline de treino e o quality gate | ✅ | `uv run --no-sync dvc repro` (split → train → evaluate → gate → test) |
-| Subir a API local em Docker | ✅ | `docker compose up -d` após o `dvc pull` (o `Dockerfile` copia `models/`) |
-| Stack de monitoramento (Prometheus + Grafana, 6 painéis) | ✅ | mesmo `docker compose up -d`; Grafana em `localhost:3000` (admin/admin) |
-| Benchmark ONNX vs sklearn | ✅ | `uv run --no-sync python -m src.experiments.benchmark_onnx` |
-| Testar a API em produção | ✅ | `GET /health` e `POST /predict` na URL do Cloud Run (seção "Cloud Run e métricas") |
-| Conferir CI e CD | ✅ | Aba *Actions* do repositório (workflows verdes na `main`) |
-| Executar a DAG de Continuous Training | ❌ | Faz `dvc push` no bucket — exige ADC do projeto (ver `docs/continuous-training.md`) |
-| Executar o Continuous Deployment | ❌ | Usa Workload Identity Federation do projeto (ver `docs/continuous-deployment.md`) |
-
-A pseudo-rotulagem com BioBERT também não precisa ser reexecutada: o CSV
-pseudo-rotulado já vem pelo `dvc pull` (regerá-lo exige GPU ou ~30 min de CPU).
-
----
-
 # Etapa 1 — API e Deploy
 
 A Etapa 1 tem como objetivo criar a API de inferência, containerizar o serviço e estabelecer um baseline de latência.
