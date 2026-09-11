@@ -122,7 +122,7 @@ comando envia o cache, mas não cria commit Git. O responsável deve revisar
 candidato por pull request. Assim o modelo anterior permanece recuperável pelo
 commit anterior.
 
-## Evidência local de 09/09/2026
+## Evidência local de 10/09/2026
 
 Execução forçada:
 

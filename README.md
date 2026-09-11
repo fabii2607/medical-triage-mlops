@@ -29,7 +29,7 @@ Avaliação no split de teste (1.685 amostras, 203 `urgente`). O baseline v1 foi
 |---|---:|---:|---:|---:|---:|---:|
 | MLP v1 (720 amostras) | 0,565 | 0,442 | 0,406 | 0,000 | 7,5 MB | 4,3 ms |
 | MLP v2 (corpus completo) | **0,776** | 0,731 | 0,748 | 0,591 | 7,5 MB | 0,59 ms |
-| **LogReg balanced** ✅ | 0,768 | **0,778** | **0,750** | **0,813** | **0,3 MB** | **0,38 ms** |
+| **LogReg balanced** ✅ | 0,768 | **0,778** | **0,750** | **0,813** | **0,3 MB** | **0,43 ms** |
 
 > Números do LogReg conforme o pipeline DVC atual
 > ([docs/results/test_metrics.json](docs/results/test_metrics.json)); o
@@ -568,7 +568,7 @@ Min: 2.99 ms
 Max: 9.47 ms
 ```
 
-O valor de aproximadamente **0,46 ms** apresentado nas métricas do modelo corresponde à inferência local sem a sobrecarga HTTP.
+O valor de aproximadamente **0,43 ms** apresentado nas métricas do modelo (`docs/results/test_metrics.json`) corresponde à inferência local sem a sobrecarga HTTP.
 
 O benchmark da API mede o tempo de resposta completo, incluindo a comunicação HTTP, validação e processamento da requisição.
 
@@ -592,11 +592,13 @@ unitária em 200 amostras, CPU):
 
 | | sklearn (joblib) | ONNX Runtime |
 |---|---:|---:|
-| Latência média | 0,614 ms | **0,083 ms** |
-| Latência P95 | 1,049 ms | **0,141 ms** |
+| Latência média | 0,525 ms | **0,079 ms** |
+| Latência P95 | 0,840 ms | **0,118 ms** |
 | Tamanho do artefato | 310 KB | **208 KB** |
 
-**Speedup de ~7,4x na latência média.** Resultados completos em
+**Speedup de ~6x na latência média** (5,4–6,7x em três execuções sobre o
+modelo atual do `dvc.lock`: o ONNX é estável em ≈0,08 ms, o sklearn oscila
+entre 0,39 e 0,53 ms). Resultados completos em
 [docs/results/onnx_benchmark.json](docs/results/onnx_benchmark.json).
 
 ### Concordância entre os backends
@@ -1361,7 +1363,7 @@ P95: 6.37 ms
 - [x] Inferência utilizando ONNX Runtime
 - [x] Benchmark do modelo original
 - [x] Benchmark do modelo otimizado
-- [x] Comparação de latência (7,4x — ver seção "Otimização de latência")
+- [x] Comparação de latência (~6x — ver seção "Otimização de latência")
 - [x] Atualização da arquitetura
 - [ ] Gravação do vídeo STAR
 - [ ] Consolidação da entrega final
