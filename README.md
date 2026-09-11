@@ -1372,8 +1372,8 @@ P95: 6.37 ms
 - [x] Benchmark do modelo otimizado
 - [x] Comparação de latência (~6x — ver seção "Otimização de latência")
 - [x] Atualização da arquitetura
-- [ ] Gravação do vídeo STAR
-- [ ] Consolidação da entrega final
+- [x] Gravação do vídeo STAR
+- [x] Consolidação da entrega final
 
 ---
 
@@ -1395,19 +1395,17 @@ P95: 6.37 ms
 | Monitoramento da API no Cloud Run | Etapa 3 | ✅ |
 | Otimização com ONNX/quantização/pruning | Etapa 4 | ✅ |
 | Comparação de latência | Etapa 4 | ✅ |
-| Vídeo STAR | Etapa 4 | ⏳ |
+| Vídeo STAR | Etapa 4 | ✅ |
 
 ---
 
-# Próximas etapas
+# Status da entrega
 
-O código, o modelo base, CI, CT, CD, observabilidade e benchmark ONNX estão
-concluídos. Para fechar a entrega acadêmica ainda é necessário:
-
-1. versionar ou anexar à entrega o artefato `models/logreg_tfidf.onnx`;
-2. atualizar a apresentação com a arquitetura e as evidências finais;
-3. gravar e disponibilizar o link do vídeo STAR de até cinco minutos;
-4. executar uma última reprodução em clone limpo.
+Todas as etapas do Tech Challenge estão concluídas: código, modelo, CI, CT,
+CD, observabilidade e benchmark ONNX; o artefato `models/logreg_tfidf.onnx`
+está versionado no DVC, a apresentação (`docs/apresentacao_star.pdf`) reflete
+a arquitetura final, a reprodução em clone limpo — `dvc pull` sem
+credenciais, testes e API — foi validada, e o vídeo STAR foi gravado.
 
 ---
 
