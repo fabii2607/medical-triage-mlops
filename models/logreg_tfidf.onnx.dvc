@@ -1,0 +1,5 @@
+outs:
+- md5: b66337ad181bd70bb19d0a9fa1de2d06
+  size: 212873
+  hash: md5
+  path: logreg_tfidf.onnx
